@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" fill="none">
+  <!-- Asset #6  crisp zone overlay (16:9). Pair with table-composition.png -->
+  <defs>
+    <style>
+      .zone { fill: rgba(214,175,85,0.08); stroke: #D6AF55; stroke-width: 2; stroke-dasharray: 8 6; }
+      .label { fill: #F7F1E3; font-family: system-ui, sans-serif; font-size: 18px; font-weight: 700; letter-spacing: 1.5px; }
+      .sub { fill: #D6AF55; font-family: system-ui, sans-serif; font-size: 14px; letter-spacing: 1px; }
+      .safe { fill: rgba(0,200,83,0.06); stroke: #00C853; stroke-width: 1.5; stroke-dasharray: 4 4; }
+    </style>
+  </defs>
+
+  <!-- Table oval -->
+  <ellipse cx="800" cy="370" rx="672" ry="279" class="zone"/>
+  <text x="800" y="250" text-anchor="middle" class="sub">TABLE 84×62%</text>
+
+  <!-- Seats -->
+  <circle cx="800" cy="72" r="56" class="zone"/>
+  <text x="800" y="40" text-anchor="middle" class="label">SEAT TOP</text>
+
+  <circle cx="128" cy="378" r="56" class="zone"/>
+  <text x="128" y="300" text-anchor="middle" class="label">SEAT LEFT</text>
+
+  <circle cx="1472" cy="378" r="56" class="zone"/>
+  <text x="1472" y="300" text-anchor="middle" class="label">SEAT RIGHT</text>
+
+  <circle cx="800" cy="648" r="68" class="zone"/>
+  <text x="800" y="600" text-anchor="middle" class="label">SEAT BOTTOM (YOU)</text>
+
+  <!-- Trick diamond -->
+  <rect x="608" y="288" width="384" height="252" rx="12" class="zone"/>
+  <text x="800" y="320" text-anchor="middle" class="label">CENTER TRICK</text>
+  <circle cx="800" cy="306" r="8" fill="#D6AF55"/>
+  <circle cx="800" cy="468" r="8" fill="#D6AF55"/>
+  <circle cx="672" cy="387" r="8" fill="#D6AF55"/>
+  <circle cx="928" cy="387" r="8" fill="#D6AF55"/>
+
+  <!-- Opponent fans -->
+  <rect x="704" y="162" width="192" height="72" rx="8" class="zone"/>
+  <rect x="256" y="306" width="128" height="108" rx="8" class="zone"/>
+  <rect x="1216" y="306" width="128" height="108" rx="8" class="zone"/>
+
+  <!-- Hand -->
+  <rect x="240" y="720" width="1120" height="162" rx="16" class="zone"/>
+  <text x="800" y="810" text-anchor="middle" class="label">LOCAL HAND ZONE</text>
+
+  <!-- UI safe -->
+  <rect x="320" y="0" width="960" height="54" class="safe"/>
+  <text x="800" y="36" text-anchor="middle" class="sub">UI SAFE TOP</text>
+  <rect x="0" y="495" width="160" height="198" class="safe"/>
+  <text x="80" y="600" text-anchor="middle" class="sub">UI L</text>
+  <rect x="1440" y="495" width="160" height="198" class="safe"/>
+  <text x="1520" y="600" text-anchor="middle" class="sub">UI R</text>
+</svg>

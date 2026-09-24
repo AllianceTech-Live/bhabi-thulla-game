@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="pfGold" x1="18" y1="14" x2="110" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F0D58A"/>
+      <stop offset="42%" stop-color="#D6AF55"/>
+      <stop offset="100%" stop-color="#8C641E"/>
+    </linearGradient>
+    <linearGradient id="pfGoldSoft" x1="64" y1="8" x2="64" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E8C96A"/>
+      <stop offset="100%" stop-color="#A87924"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer metallic ring -->
+  <circle cx="64" cy="64" r="58" stroke="url(#pfGold)" stroke-width="6" fill="none"/>
+  <!-- Recessed black channel -->
+  <circle cx="64" cy="64" r="52.5" stroke="#0B0B0B" stroke-width="3.5" fill="none"/>
+  <!-- Inner gold pinstripe -->
+  <circle cx="64" cy="64" r="49" stroke="url(#pfGoldSoft)" stroke-width="1.75" fill="none"/>
+  <!-- Avatar cutout -->
+  <circle cx="64" cy="64" r="45.5" fill="#0B0B0B"/>
+
+  <!-- Top Art Deco fan crest -->
+  <g stroke="url(#pfGold)" stroke-linecap="round" fill="none">
+    <path d="M64 6 L64 18" stroke-width="1.6"/>
+    <path d="M58 8 L64 18 L70 8" stroke-width="1.2"/>
+    <path d="M54 10 L64 20 L74 10" stroke-width="1"/>
+    <path d="M50 13 L64 22 L78 13" stroke-width="0.9"/>
+  </g>
+  <circle cx="64" cy="20" r="2.2" fill="#D6AF55"/>
+
+  <!-- Bottom diamond accent -->
+  <path d="M64 118 L67.5 112 L64 107 L60.5 112 Z" fill="#D6AF55"/>
+  <line x1="56" y1="112" x2="72" y2="112" stroke="#A87924" stroke-width="0.9"/>
+
+  <!-- Side stepped chevrons -->
+  <g stroke="#C89B3C" stroke-width="1" stroke-linecap="round" fill="none" opacity="0.9">
+    <path d="M10 58 L16 64 L10 70"/>
+    <path d="M14 56 L21 64 L14 72"/>
+    <path d="M118 58 L112 64 L118 70"/>
+    <path d="M114 56 L107 64 L114 72"/>
+  </g>
+</svg>

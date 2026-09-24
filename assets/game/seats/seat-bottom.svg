@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" fill="none">
+  <defs>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F0D58A"/>
+      <stop offset="100%" stop-color="#8C641E"/>
+    </linearGradient>
+  </defs>
+  <circle cx="60" cy="40" r="26" stroke="url(#ring)" stroke-width="3" fill="#0B0B0B"/>
+  <circle cx="60" cy="40" r="22" stroke="#A87924" stroke-width="1"/>
+  <!-- Name plate -->
+  <rect x="28" y="74" width="64" height="18" rx="9" fill="#080909" stroke="#D6AF55" stroke-width="1"/>
+</svg>

@@ -1,40 +1,25 @@
-import { Link, Stack } from 'expo-router';
-import { StyleSheet } from 'react-native';
-
-import { Text, View } from '@/components/Themed';
+import { router, Stack } from 'expo-router';
+import { StyleSheet, Text, View } from 'react-native';
+import { AppButton, Screen, Title } from '@/src/components/ui/AppButton';
+import { COLORS } from '@/src/constants/theme';
 
 export default function NotFoundScreen() {
   return (
     <>
-      <Stack.Screen options={{ title: 'Oops!' }} />
-      <View style={styles.container}>
-        <Text style={styles.title}>This screen doesn't exist.</Text>
-
-        <Link href="/" style={styles.link}>
-          <Text style={styles.linkText}>Go to home screen!</Text>
-        </Link>
-      </View>
+      <Stack.Screen options={{ title: 'Oops' }} />
+      <Screen onBack={() => router.replace('/')}>
+        <Title>Screen not found</Title>
+        <Text style={styles.note}>That page is not in this game.</Text>
+        <AppButton title="Home" onPress={() => router.replace('/')} />
+      </Screen>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  link: {
-    marginTop: 15,
-    paddingVertical: 15,
-  },
-  linkText: {
-    fontSize: 14,
-    color: '#2e78b7',
+  note: {
+    color: COLORS.muted,
+    textAlign: 'center',
+    marginVertical: 16,
   },
 });

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 120" fill="none">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0C1512"/>
+      <stop offset="100%" stop-color="#060708"/>
+    </linearGradient>
+  </defs>
+  <!-- Double-line Deco panel with angled corners -->
+  <path d="M12 0 H268 L280 12 V108 L268 120 H12 L0 108 V12 Z" fill="url(#panel)" stroke="#C89B3C" stroke-width="1.5"/>
+  <path d="M18 8 H262 L270 16 V104 L262 112 H18 L10 104 V16 Z" stroke="#A87924" stroke-width="0.8" opacity="0.55"/>
+  <line x1="40" y1="20" x2="240" y2="20" stroke="#C89B3C" stroke-width="0.6" opacity="0.35"/>
+</svg>
