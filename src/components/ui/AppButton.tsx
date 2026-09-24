@@ -52,7 +52,7 @@ export function AppButton({
   style,
   textStyle,
   flex,
-  compact: _compact,
+  compact = false,
   plain = false,
   glyph,
 }: ButtonProps) {
@@ -60,7 +60,13 @@ export function AppButton({
   const isGhost = variant === 'ghost';
   const emblem = glyph ?? VARIANT_GLYPH[variant];
   const showChip = !plain && !isGhost && !!emblem;
-  const chip = Math.max(22, Math.round(layout.btnMinH * 0.55));
+  const padV = compact ? Math.max(4, layout.btnPadV - 5) : layout.btnPadV;
+  const padH = compact ? Math.max(8, layout.btnPadH - 8) : layout.btnPadH;
+  const minH = compact ? Math.max(28, layout.btnMinH - 10) : layout.btnMinH;
+  const fontSize = compact
+    ? Math.max(11, layout.btnFont - 2)
+    : layout.btnFont;
+  const chip = Math.max(18, Math.round(minH * 0.55));
 
   return (
     <Pressable
@@ -75,10 +81,10 @@ export function AppButton({
       style={({ pressed }) => [
         styles.base,
         {
-          paddingVertical: layout.btnPadV,
-          paddingHorizontal: isGhost ? layout.btnPadH - 2 : layout.btnPadH,
-          marginVertical: 3,
-          minHeight: layout.btnMinH,
+          paddingVertical: padV,
+          paddingHorizontal: isGhost ? padH - 2 : padH,
+          marginVertical: compact ? 0 : 3,
+          minHeight: minH,
         },
         styles[variant],
         flex && styles.flex,
@@ -103,7 +109,7 @@ export function AppButton({
           <Text
             style={[
               styles.chipGlyph,
-              { fontSize: Math.max(11, Math.round(chip * 0.45)) },
+              { fontSize: Math.max(10, Math.round(chip * 0.45)) },
               variant === 'primary' && styles.chipGlyphOnGold,
               variant === 'danger' && styles.chipGlyphDanger,
             ]}
@@ -115,10 +121,10 @@ export function AppButton({
       <Text
         numberOfLines={1}
         adjustsFontSizeToFit
-        minimumFontScale={0.85}
+        minimumFontScale={0.75}
         style={[
           styles.text,
-          { fontSize: layout.btnFont, flexShrink: 1 },
+          { fontSize, flexShrink: 1 },
           variant === 'ghost' && styles.ghostText,
           variant === 'secondary' && styles.secondaryText,
           variant === 'danger' && styles.dangerText,

@@ -31,6 +31,7 @@ const navTheme = {
 
 const LANDSCAPE_SCREENS = [
   'index',
+  'play',
   'mode',
   'offline/setup',
   'online/index',
@@ -39,6 +40,7 @@ const LANDSCAPE_SCREENS = [
           'online/match',
           'lobby/[code]',
   'game/local',
+  'game/bluff-local',
   'game/[id]',
   'game/results',
   'game/pause',

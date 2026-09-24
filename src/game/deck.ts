@@ -42,9 +42,18 @@ export function compareCards(a: Card, b: Card): number {
   return compareRanks(a.rank, b.rank);
 }
 
-/** Sort hand by suit then rank (ascending) for clean UI. */
+/** Sort hand by suit then rank (ascending) — Thulla / suit games. */
 export function sortHand(hand: Card[]): Card[] {
   return [...hand].sort(compareCards);
+}
+
+/** Sort hand by rank then suit — Bluff (same ranks sit together). */
+export function sortHandByRank(hand: Card[]): Card[] {
+  return [...hand].sort((a, b) => {
+    const byRank = compareRanks(a.rank, b.rank);
+    if (byRank !== 0) return byRank;
+    return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
+  });
 }
 
 /**

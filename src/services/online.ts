@@ -5,7 +5,10 @@
 
 import { getSupabase, isSupabaseConfigured } from './supabase';
 import { useSettingsStore } from '../store/settingsStore';
+import { useGameCatalogStore } from '../store/gameCatalogStore';
 import type { GameState } from '../game/types';
+import type { BluffState } from '../game/bluff';
+import type { CatalogGameId } from '../store/gameCatalogStore';
 
 export function generateRoomCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -152,6 +155,7 @@ async function createRoomInternal(
       max_players: 4,
       host_id: userId,
       game_state: null,
+      game_type: useGameCatalogStore.getState().selectedGameId as CatalogGameId,
     })
     .select('id, room_code')
     .single();
@@ -200,11 +204,13 @@ export async function quickMatch(displayName: string): Promise<{
     updated_at: new Date().toISOString(),
   });
 
-  // Prefer an existing open matchmaking lobby with free seats.
+  // Prefer an existing open matchmaking lobby with free seats (same game type).
+  const gameType = useGameCatalogStore.getState().selectedGameId as CatalogGameId;
   const { data: openGames, error: listError } = await sb
     .from('games')
-    .select('id, room_code, max_players')
+    .select('id, room_code, max_players, game_type')
     .eq('status', 'lobby')
+    .eq('game_type', gameType)
     .like('room_code', 'MM%')
     .order('created_at', { ascending: true })
     .limit(12);
@@ -376,6 +382,28 @@ export async function playOnlineCard(
   return data.state as GameState;
 }
 
+export type BluffMoveAction = 'play' | 'call' | 'pass';
+
+export async function submitBluffMove(
+  gameId: string,
+  body: {
+    action: BluffMoveAction;
+    cardIds?: string[];
+    claimedRank?: string;
+  }
+): Promise<BluffState> {
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase not configured');
+
+  const { data, error } = await sb.functions.invoke('bluff-move', {
+    body: { gameId, ...body },
+  });
+
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+  return data.state as BluffState;
+}
+
 export async function fetchRoomCode(gameId: string): Promise<string | null> {
   const sb = getSupabase();
   if (!sb) return null;
@@ -387,9 +415,24 @@ export async function fetchRoomCode(gameId: string): Promise<string | null> {
   return data?.room_code ?? null;
 }
 
+export type OnlineGameSnapshot = {
+  status: string;
+  gameType: 'thulla' | 'bluff';
+  state: GameState | BluffState;
+  updatedAt?: string;
+};
+
 export async function fetchGameState(
   gameId: string
 ): Promise<GameState | null> {
+  const snap = await fetchOnlineSnapshot(gameId);
+  if (!snap || snap.gameType === 'bluff') return null;
+  return snap.state as GameState;
+}
+
+export async function fetchOnlineSnapshot(
+  gameId: string
+): Promise<OnlineGameSnapshot | null> {
   const sb = getSupabase();
   if (!sb) return null;
 
@@ -399,7 +442,13 @@ export async function fetchGameState(
 
   if (error) throw new Error(error.message);
   if (data?.error) throw new Error(data.error);
-  return (data.state as GameState) ?? null;
+  if (!data?.state) return null;
+  return {
+    status: data.status,
+    gameType: data.gameType === 'bluff' ? 'bluff' : 'thulla',
+    state: data.state,
+    updatedAt: data.updatedAt,
+  };
 }
 
 export type LobbyPlayer = {
@@ -418,6 +467,7 @@ export async function fetchLobby(gameId: string): Promise<{
     status: string;
     host_id: string;
     game_state: GameState | null;
+    game_type?: CatalogGameId;
   };
   players: LobbyPlayer[];
 } | null> {
@@ -426,9 +476,9 @@ export async function fetchLobby(gameId: string): Promise<{
 
   const { data: game } = await sb
     .from('games')
-    .select('id, room_code, status, host_id, game_state')
+    .select('id, room_code, status, host_id, game_state, game_type')
     .eq('id', gameId)
-    .single();
+    .maybeSingle();
 
   if (!game) return null;
 
@@ -438,5 +488,11 @@ export async function fetchLobby(gameId: string): Promise<{
     .eq('game_id', gameId)
     .order('seat_number');
 
-  return { game, players: players ?? [] };
+  return {
+    game: {
+      ...game,
+      game_type: (game.game_type as CatalogGameId) || 'thulla',
+    },
+    players: (players as LobbyPlayer[]) ?? [],
+  };
 }

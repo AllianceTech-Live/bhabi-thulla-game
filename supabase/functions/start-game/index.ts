@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { createGame } from '../_shared/game/GameEngine.ts';
+import { createBluffGame } from '../_shared/game/bluff/engine.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,7 +38,7 @@ Deno.serve(async (req) => {
 
     const { data: game } = await admin
       .from('games')
-      .select('id, host_id, status')
+      .select('id, host_id, status, game_type')
       .eq('id', gameId)
       .single();
 
@@ -62,15 +63,20 @@ Deno.serve(async (req) => {
       return json({ error: 'Max 4 players' }, 400);
     }
 
-    const state = createGame({
-      mode: 'online',
-      gameId,
-      playerConfigs: players.map((p) => ({
-        id: p.player_id,
-        name: p.display_name,
-        type: 'human' as const,
-      })),
-    });
+    const configs = players.map((p) => ({
+      id: p.player_id,
+      name: p.display_name,
+      type: 'human' as const,
+    }));
+
+    const isBluff = game.game_type === 'bluff';
+    const state = isBluff
+      ? createBluffGame({ gameId, playerConfigs: configs })
+      : createGame({
+          mode: 'online',
+          gameId,
+          playerConfigs: configs,
+        });
 
     await admin
       .from('games')
@@ -94,7 +100,7 @@ Deno.serve(async (req) => {
         .eq('player_id', p.id);
     }
 
-    return json({ state });
+    return json({ state, gameType: isBluff ? 'bluff' : 'thulla' });
   } catch (e) {
     return json(
       { error: e instanceof Error ? e.message : 'Server error' },

@@ -19,6 +19,7 @@ export type SfxName =
   | 'pass_turn'
   | 'stage'
   | 'thulla'
+  | 'bluff'
   | 'win'
   | 'click'
   | 'dice';
@@ -41,6 +42,8 @@ const SOURCES: Record<SfxName, number> = {
   stage: require('../../assets/sounds/stage.wav'),
   /** Spoken "Thulla!" shout (Lahore 3 take) on slam. */
   thulla: require('../../assets/sounds/thulla.wav'),
+  /** Spoken "Bluff!" shout when a liar is caught. */
+  bluff: require('../../assets/sounds/bluff.wav'),
   /** Escape / win fanfare. */
   win: require('../../assets/sounds/win-cheer.wav'),
   click: require('../../assets/sounds/tap.wav'),

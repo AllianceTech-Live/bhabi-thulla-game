@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameChrome } from '@/src/components/game/GameChrome';
 import { EscapeCelebration } from '@/src/components/game/EscapeCelebration';
 import { GameTable } from '@/src/components/game/GameTable';
+import { BluffOnlinePlay } from '@/src/components/game/BluffOnlinePlay';
 import { TableLobbyControls } from '@/src/components/game/TableLobbyControls';
 import { PlayerHand } from '@/src/components/game/PlayerHand';
 import { AppButton } from '@/src/components/ui/AppButton';
@@ -14,11 +15,12 @@ import { GAME_THEME } from '@/src/constants/gameTheme';
 import { GAME_TIMING } from '@/src/constants/timing';
 import { chooseCard } from '@/src/game/ai/chooseCard';
 import { buildLobbyTableState } from '@/src/game/lobbyTableState';
+import type { BluffState } from '@/src/game/bluff';
 import type { GameState } from '@/src/game/types';
 import {
   ensureAnonymousSession,
-  fetchGameState,
   fetchLobby,
+  fetchOnlineSnapshot,
   fetchRoomCode,
   leaveRoom,
   playOnlineCard,
@@ -47,11 +49,15 @@ export default function OnlineGameScreen() {
   const insets = useSafeAreaInsets();
   const room = useRoomLayout();
   const [state, setState] = useState<GameState | null>(null);
+  const [bluffState, setBluffState] = useState<BluffState | null>(null);
   const [phase, setPhase] = useState<'loading' | 'waiting' | 'playing'>(
     'loading'
   );
   const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
   const [hostId, setHostId] = useState<string | null>(null);
+  const [lobbyGameType, setLobbyGameType] = useState<'thulla' | 'bluff'>(
+    'thulla'
+  );
   const [userId, setUserId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -78,13 +84,21 @@ export default function OnlineGameScreen() {
     if (!gameId) return;
     const started = Date.now();
     try {
-      const next = await fetchGameState(gameId);
+      const snap = await fetchOnlineSnapshot(gameId);
       setLatencyMs(Date.now() - started);
-      if (next) {
-        setState(next);
+      if (!snap) return;
+      setLobbyGameType(snap.gameType);
+      if (snap.gameType === 'bluff') {
+        setBluffState(snap.state as BluffState);
+        setState(null);
         setPhase('playing');
-        useGameStore.setState({ state: next });
+        return;
       }
+      const next = snap.state as GameState;
+      setState(next);
+      setBluffState(null);
+      setPhase('playing');
+      useGameStore.setState({ state: next });
     } catch {
       // Still in lobby / no state yet
     }
@@ -96,6 +110,7 @@ export default function OnlineGameScreen() {
     if (!data) return;
     setLobbyPlayers(data.players);
     setHostId(data.game.host_id);
+    setLobbyGameType(data.game.game_type === 'bluff' ? 'bluff' : 'thulla');
     if (data.game.room_code) setRoomCode(data.game.room_code);
 
     if (data.game.status === 'playing' && data.game.game_state) {
@@ -105,6 +120,7 @@ export default function OnlineGameScreen() {
     if (data.game.status === 'lobby' || data.game.status === 'waiting') {
       setPhase('waiting');
       setState(null);
+      setBluffState(null);
     }
   }, [gameId, syncPlaying]);
 
@@ -400,7 +416,11 @@ export default function OnlineGameScreen() {
           <GameChrome
             roomCode={roomCode || 'ROOM'}
             latencyMs={null}
-            statusLine="WAITING FOR PLAYERS"
+            statusLine={
+              lobbyGameType === 'bluff'
+                ? 'BLUFF · WAITING'
+                : 'WAITING FOR PLAYERS'
+            }
             yourTurn={false}
             onExit={onLeaveTable}
           />
@@ -414,6 +434,20 @@ export default function OnlineGameScreen() {
             onLeave={onLeaveTable}
           />
         </View>
+      </GameBackground>
+    );
+  }
+
+  if (phase === 'playing' && lobbyGameType === 'bluff' && bluffState && userId) {
+    return (
+      <GameBackground>
+        <BluffOnlinePlay
+          gameId={gameId!}
+          userId={userId}
+          roomCode={roomCode || 'BLUFF'}
+          initialState={bluffState}
+          onState={setBluffState}
+        />
       </GameBackground>
     );
   }

@@ -1,6 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { sanitizeGameStateForPlayer } from '../_shared/game/sanitize.ts';
+import { sanitizeBluffState } from '../_shared/game/bluff/engine.ts';
 import type { GameState } from '../_shared/game/types.ts';
+import type { BluffState } from '../_shared/game/bluff/types.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -46,20 +48,23 @@ Deno.serve(async (req) => {
 
     const { data: game } = await admin
       .from('games')
-      .select('status, game_state, updated_at')
+      .select('status, game_state, updated_at, game_type')
       .eq('id', gameId)
       .single();
 
     if (!game?.game_state) return json({ error: 'No state' }, 404);
 
-    const sanitized = sanitizeGameStateForPlayer(
-      game.game_state as GameState,
-      user.id
-    );
+    const raw = game.game_state as { kind?: string };
+    const isBluff = game.game_type === 'bluff' || raw.kind === 'bluff';
+
+    const sanitized = isBluff
+      ? sanitizeBluffState(game.game_state as BluffState, user.id)
+      : sanitizeGameStateForPlayer(game.game_state as GameState, user.id);
 
     return json({
       status: game.status,
       state: sanitized,
+      gameType: isBluff ? 'bluff' : 'thulla',
       updatedAt: game.updated_at,
     });
   } catch (e) {

@@ -19,6 +19,8 @@ interface PlayerHandProps {
   hand: Card[];
   leadSuit: Suit | null;
   selectedId: string | null;
+  /** Multi-select (Bluff). When set, overrides single selectedId highlight. */
+  selectedIds?: string[];
   interactive: boolean;
   onSelect: (card: Card) => void;
   hidden?: boolean;
@@ -34,6 +36,7 @@ export function PlayerHand({
   hand,
   leadSuit,
   selectedId,
+  selectedIds,
   interactive,
   onSelect,
   hidden,
@@ -42,6 +45,10 @@ export function PlayerHand({
 }: PlayerHandProps) {
   const { width, height } = useWindowDimensions();
   const long = Math.max(width, height);
+  const selectedSet = useMemo(
+    () => new Set(selectedIds ?? (selectedId ? [selectedId] : [])),
+    [selectedIds, selectedId]
+  );
   const playable = interactive
     ? new Set(getPlayableCards(hand, leadSuit).map((c) => c.id))
     : new Set<string>();
@@ -83,6 +90,7 @@ export function PlayerHand({
     >
       {hand.map((card, i) => {
         const legal = interactive && playable.has(card.id);
+        const isSelected = selectedSet.has(card.id);
         return (
           <View
             key={card.id}
@@ -90,7 +98,7 @@ export function PlayerHand({
               styles.slot,
               {
                 marginLeft: i === 0 ? 0 : overlapMargin,
-                zIndex: selectedId === card.id ? 30 : i + 1,
+                zIndex: isSelected ? 30 : i + 1,
                 height: cardH,
               },
             ]}
@@ -100,7 +108,7 @@ export function PlayerHand({
             ) : (
               <PlayingCard
                 card={card}
-                selected={legal && selectedId === card.id}
+                selected={legal && isSelected}
                 drop={!legal}
                 compact={compact}
                 liftOnPress={liftOnPress}

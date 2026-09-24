@@ -25,6 +25,10 @@ interface GameTableProps {
   turnDurationSec?: number;
   /** Pre-start lobby: seats show Waiting, no card fans */
   waitingRoom?: boolean;
+  /** Face-down cards on table (Bluff claims) */
+  faceDownPlays?: boolean;
+  /** Slam badge + voice: Thulla game vs Bluff */
+  slamStyle?: 'thulla' | 'bluff';
 }
 
 function seatForRelative(
@@ -69,6 +73,8 @@ export function GameTable({
   turnProgress = 1,
   turnDurationSec = 10,
   waitingRoom = false,
+  faceDownPlays = false,
+  slamStyle = 'thulla',
 }: GameTableProps) {
   const {
     onSceneLayout,
@@ -256,9 +262,10 @@ export function GameTable({
         plays.map((play, index) => {
           const origin = originForPlayer(play.playerId, seatMap);
           const anchor = trick[origin];
+          if (!anchor) return null;
           return (
             <View
-              key={`${play.playerId}-${play.card.id}`}
+              key={`${play.playerId}-${play.card.id}-${index}`}
               style={[
                 absBox(anchor.box(trickCard.w, trickCard.h)),
                 { zIndex: GAME_THEME.layers.playedCards + index },
@@ -271,6 +278,8 @@ export function GameTable({
                 total={plays.length}
                 cardWidth={trickCard.w}
                 cardHeight={trickCard.h}
+                faceDown={faceDownPlays}
+                slamStyle={slamStyle}
                 collectX={
                   collectTo ? anchors[collectTo].x - trick[origin].x : undefined
                 }

@@ -17,16 +17,11 @@ import { cachedAssetSource } from '@/src/services/preloadAssets';
 import { playSfx } from '@/src/services/audio';
 import { triggerHaptic } from '@/src/services/haptics';
 import { useSettingsStore } from '@/src/store/settingsStore';
-
-type ModeTab = {
-  key: string;
-  label: string;
-  sub: string;
-  glyph: string;
-  image: number;
-  onPress: () => void;
-  primary?: boolean;
-};
+import {
+  CATALOG_GAMES,
+  type CatalogGameId,
+  useGameCatalogStore,
+} from '@/src/store/gameCatalogStore';
 
 function TopIcon({
   glyph,
@@ -56,34 +51,12 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const layout = useResponsiveLayout();
   const displayName = useSettingsStore((s) => s.displayName);
+  const setSelectedGame = useGameCatalogStore((s) => s.setSelectedGame);
 
-  const tabs: ModeTab[] = [
-    {
-      key: 'offline',
-      label: 'Offline',
-      sub: 'Pass & Play · AI',
-      glyph: '♠',
-      image: GAME_ASSETS.table,
-      primary: true,
-      onPress: () => router.push('/mode'),
-    },
-    {
-      key: 'online',
-      label: 'Online',
-      sub: 'Create · Join',
-      glyph: '♦',
-      image: GAME_ASSETS.environment,
-      onPress: () => router.push('/online'),
-    },
-    {
-      key: 'match',
-      label: 'Quick Match',
-      sub: 'Find 3 players',
-      glyph: '≫',
-      image: GAME_ASSETS.thullaEffect,
-      onPress: () => router.push('/online/match'),
-    },
-  ];
+  const openGame = (id: CatalogGameId) => {
+    setSelectedGame(id);
+    router.push('/play');
+  };
 
   return (
     <View style={styles.root}>
@@ -178,9 +151,7 @@ export default function HomeScreen() {
             <Text style={[styles.brand, { fontSize: layout.titleSize + 4 }]}>
               {APP_NAME}
             </Text>
-            <Text style={styles.tagline}>
-              Get rid of your cards. Don&apos;t be Bhabhi.
-            </Text>
+            <Text style={styles.tagline}>Choose a game · same table · no stakes</Text>
           </View>
         </View>
       </View>
@@ -195,16 +166,18 @@ export default function HomeScreen() {
           },
         ]}
       >
+        <Text style={styles.sectionLabel}>Select game</Text>
         <View style={styles.cardRow}>
-          {tabs.map((tab) => (
+          {CATALOG_GAMES.map((g, i) => (
             <DeckOptionCard
-              key={tab.key}
-              label={tab.label}
-              sub={tab.sub}
-              glyph={tab.glyph}
-              image={tab.image}
-              primary={tab.primary}
-              onPress={tab.onPress}
+              key={g.id}
+              label={g.title}
+              sub={g.blurb}
+              glyph={g.glyph}
+              image={g.image}
+              primary={i === 0}
+              onPress={() => openGame(g.id)}
+              style={styles.gameCard}
             />
           ))}
         </View>
@@ -322,10 +295,24 @@ const styles = StyleSheet.create({
   tabBarWrap: {
     zIndex: 3,
   },
+  sectionLabel: {
+    color: ART_DECO_PALETTE.goldLight,
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginBottom: 8,
+    opacity: 0.9,
+  },
   cardRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 10,
+    gap: 12,
+  },
+  gameCard: {
+    maxHeight: 168,
+    minHeight: 128,
   },
   disclaimer: {
     textAlign: 'center',

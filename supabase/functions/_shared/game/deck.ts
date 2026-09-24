@@ -47,6 +47,15 @@ export function sortHand(hand: Card[]): Card[] {
   return [...hand].sort(compareCards);
 }
 
+/** Sort hand by rank then suit — Bluff (same ranks sit together). */
+export function sortHandByRank(hand: Card[]): Card[] {
+  return [...hand].sort((a, b) => {
+    const byRank = compareRanks(a.rank, b.rank);
+    if (byRank !== 0) return byRank;
+    return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
+  });
+}
+
 /**
  * Deal all cards as evenly as possible among players.
  * Remainder cards go to the first seats (seat order).

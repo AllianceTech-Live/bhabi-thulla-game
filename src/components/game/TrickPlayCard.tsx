@@ -15,6 +15,7 @@ import { GAME_THEME } from '../../constants/gameTheme';
 import { GAME_TIMING } from '../../constants/timing';
 import { playSfx } from '../../services/audio';
 import { PlayingCard } from '../cards/PlayingCard';
+import { CardBackView } from '../cards/CardBackView';
 
 export type SeatOrigin = 'bottom' | 'top' | 'left' | 'right';
 
@@ -35,6 +36,10 @@ interface TrickPlayCardProps {
   collectX?: number;
   collectY?: number;
   onCollected?: () => void;
+  /** Face-down (Bluff claims) */
+  faceDown?: boolean;
+  /** Slam celebration: Thulla shout vs Bluff shout */
+  slamStyle?: 'thulla' | 'bluff';
 }
 
 /** Presentation fly-in. A Thulla lifts big, hits the table, then the pile can leave. */
@@ -48,6 +53,8 @@ export function TrickPlayCard({
   collectX,
   collectY,
   onCollected,
+  faceDown = false,
+  slamStyle = 'thulla',
 }: TrickPlayCardProps) {
   const collecting = collectX != null && collectY != null;
   const latest = index === total - 1;
@@ -61,14 +68,14 @@ export function TrickPlayCard({
   const notify = useCallback(() => {
     doneRef.current?.();
   }, []);
-  const shoutThulla = useCallback(() => {
-    void playSfx('thulla');
-  }, []);
+  const shoutSlam = useCallback(() => {
+    void playSfx(slamStyle === 'bluff' ? 'bluff' : 'thulla');
+  }, [slamStyle]);
   const hitTable = useCallback(() => {
     void playSfx('card_play');
   }, []);
   const start = ORIGIN_OFFSET[origin];
-
+  const badgeLabel = slamStyle === 'bluff' ? 'BLUFF!' : 'THULLA!';
   useEffect(() => {
     if (collecting) {
       progress.value = 1;
@@ -113,13 +120,16 @@ export function TrickPlayCard({
     );
     const shoutAt = liftDelay + 40;
     const hitAt = liftDelay + 320 + 220 + Math.round(280 * 0.85);
-    const shoutTimer = setTimeout(() => shoutThulla(), shoutAt);
+    // One shout for the pile (latest card only)
+    const shoutTimer = latest
+      ? setTimeout(() => shoutSlam(), shoutAt)
+      : undefined;
     const hitTimer = setTimeout(() => hitTable(), hitAt);
     return () => {
-      clearTimeout(shoutTimer);
+      if (shoutTimer) clearTimeout(shoutTimer);
       clearTimeout(hitTimer);
     };
-  }, [collecting, hitTable, isThulla, play.card.id, shoutThulla, slam]);
+  }, [collecting, hitTable, isThulla, latest, play.card.id, shoutSlam, slam]);
 
   useEffect(() => {
     if (!collecting) {
@@ -204,10 +214,14 @@ export function TrickPlayCard({
         isThulla && !collecting && styles.thullaGlow,
       ]}
     >
-      <PlayingCard card={play.card} width={cardWidth} height={cardHeight} />
-      {isThulla ? (
+      {faceDown ? (
+        <CardBackView width={cardWidth ?? 66} height={cardHeight ?? 88} />
+      ) : (
+        <PlayingCard card={play.card} width={cardWidth} height={cardHeight} />
+      )}
+      {isThulla && !faceDown && latest ? (
         <Animated.View style={[styles.badge, badgeStyle]} pointerEvents="none">
-          <Text style={styles.badgeText}>THULLA!</Text>
+          <Text style={styles.badgeText}>{badgeLabel}</Text>
         </Animated.View>
       ) : null}
     </Animated.View>

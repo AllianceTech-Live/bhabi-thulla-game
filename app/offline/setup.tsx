@@ -11,6 +11,8 @@ import {
 import { COLORS, MAX_PLAYERS, MIN_PLAYERS } from '@/src/constants/theme';
 import type { AiDifficulty } from '@/src/game/types';
 import { useGameStore } from '@/src/store/gameStore';
+import { useBluffStore } from '@/src/store/bluffStore';
+import { useGameCatalogStore } from '@/src/store/gameCatalogStore';
 import { useSettingsStore } from '@/src/store/settingsStore';
 import { savePlayerName } from '@/src/services/online';
 
@@ -22,6 +24,8 @@ export default function OfflineSetupScreen() {
   const nameConfirmed = useSettingsStore((s) => s.nameConfirmed);
   const defaultDiff = useSettingsStore((s) => s.defaultAiDifficulty);
   const startOfflineGame = useGameStore((s) => s.startOfflineGame);
+  const startOfflineBluff = useBluffStore((s) => s.startOfflineBluff);
+  const selectedGameId = useGameCatalogStore((s) => s.selectedGameId);
 
   const [humanCount, setHumanCount] = useState(isAi ? 1 : 2);
   const [aiCount, setAiCount] = useState(isAi ? 3 : 0);
@@ -45,15 +49,23 @@ export default function OfflineSetupScreen() {
     if (!valid) return;
     const playingAs = (savedName || name).trim() || 'Player';
     void savePlayerName(playingAs);
-    startOfflineGame({
-      mode: isAi ? 'offline_ai' : 'offline_pass_play',
+    const setup = {
+      mode: (isAi ? 'offline_ai' : 'offline_pass_play') as
+        | 'offline_ai'
+        | 'offline_pass_play',
       humanCount,
       aiCount,
       aiDifficulty: difficulty,
       humanNames: Array.from({ length: humanCount }, (_, i) =>
         i === 0 ? playingAs : `Player ${i + 1}`
       ),
-    });
+    };
+    if (selectedGameId === 'bluff') {
+      startOfflineBluff(setup);
+      router.replace('/game/bluff-local');
+      return;
+    }
+    startOfflineGame(setup);
     router.replace('/game/local');
   };
 

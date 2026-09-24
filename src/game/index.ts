@@ -7,3 +7,4 @@ export * from './rules/thulla';
 export * from './engine/GameEngine';
 export * from './engine/sanitize';
 export * from './ai/chooseCard';
+export * as bluff from './bluff';
