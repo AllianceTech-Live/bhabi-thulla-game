@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Image,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -27,6 +27,7 @@ import { useRoomLayout } from '@/src/hooks/useRoomLayout';
 import { useTableMusic } from '@/src/hooks/useTableMusic';
 import { useTurnTimer } from '@/src/hooks/useTurnTimer';
 import { playSfx, stopMusic } from '@/src/services/audio';
+import { showAlert, showConfirm } from '@/src/services/dialogs';
 import { lockLandscapeOrientation } from '@/src/services/orientation';
 import { triggerHaptic } from '@/src/services/haptics';
 import { useGameStore } from '@/src/store/gameStore';
@@ -151,9 +152,8 @@ export default function LocalGameScreen() {
   useEffect(() => {
     if (lastError) {
       void playSfx('error');
-      Alert.alert('Invalid move', lastError, [
-        { text: 'OK', onPress: clearError },
-      ]);
+      showAlert('Invalid move', lastError);
+      clearError();
     }
   }, [lastError, clearError]);
 
@@ -218,6 +218,8 @@ export default function LocalGameScreen() {
   const isPassPlay = state?.mode === 'offline_pass_play';
   const isHumanTurn = currentPlayer?.type === 'human';
   const gameOver = state?.phase === 'game_complete';
+  /** Pass-and-play hide is for hot-seat phones; web always shows the hand. */
+  const alwaysShowHand = Platform.OS === 'web';
 
   useTableMusic(Boolean(state) && !dealing && !gameOver);
 
@@ -234,7 +236,9 @@ export default function LocalGameScreen() {
     null;
 
   const handRevealed =
-    !isPassPlay || (isHumanTurn && state?.handRevealed === true);
+    alwaysShowHand ||
+    !isPassPlay ||
+    (isHumanTurn && state?.handRevealed === true);
 
   const canInteract =
     !gameOver &&
@@ -456,7 +460,10 @@ export default function LocalGameScreen() {
             },
           ]}
         >
-          {isPassPlay && isHumanTurn && !state.handRevealed ? (
+          {!alwaysShowHand &&
+          isPassPlay &&
+          isHumanTurn &&
+          !state.handRevealed ? (
             <View style={styles.passReady}>
               <Text style={styles.passReadyText}>
                 Pass to {currentPlayer?.name ?? 'next player'} — tap when ready
@@ -478,12 +485,8 @@ export default function LocalGameScreen() {
                 hidden={!handRevealed && isPassPlay}
                 compact={room.compactHand}
                 onSelect={(c) => {
-                  if (selectedId === c.id) {
-                    void onPlayCard(c.id);
-                  } else {
-                    setSelectedId(c.id);
-                    void playSfx('card_select');
-                  }
+                  setSelectedId(c.id);
+                  void onPlayCard(c.id);
                 }}
               />
             </View>
@@ -515,7 +518,7 @@ export default function LocalGameScreen() {
           statusLine={statusLine}
           yourTurn={yourTurn}
           onExit={() =>
-            Alert.alert('Leave game?', 'Progress will be lost.', [
+            showConfirm('Leave game?', 'Progress will be lost.', [
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Leave',

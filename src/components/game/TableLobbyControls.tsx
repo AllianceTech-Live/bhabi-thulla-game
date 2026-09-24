@@ -17,26 +17,29 @@ import { triggerHaptic } from '@/src/services/haptics';
 type Props = {
   roomCode: string;
   playerCount: number;
-  isHost: boolean;
   starting?: boolean;
-  onStart: () => void;
+  /** Seconds until full-table auto-deal (null = not counting) */
+  autoStartInSec?: number | null;
+  /** Quick Match: hide share code, show online search messaging */
+  quickMatch?: boolean;
   onLeave: () => void;
 };
 
 /**
- * Center overlay on the real game table — share code + Start (Ludo-style).
+ * Center overlay on the real game table — wait for 4, then auto-deal.
  */
 export function TableLobbyControls({
   roomCode,
   playerCount,
-  isHost,
   starting,
-  onStart,
+  autoStartInSec = null,
+  quickMatch = false,
   onLeave,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const canStart = playerCount >= 2;
+  const counting =
+    autoStartInSec != null && autoStartInSec > 0 && !starting;
 
   useEffect(() => {
     return () => {
@@ -67,6 +70,50 @@ export function TableLobbyControls({
     }
   };
 
+  const statusText = (() => {
+    if (starting) return 'Starting game…';
+    if (counting) {
+      if (playerCount >= 4) {
+        return `Table full — starts in ${autoStartInSec}s`;
+      }
+      return `Starts in ${autoStartInSec}s with ${playerCount} player${playerCount === 1 ? '' : 's'}`;
+    }
+    if (playerCount >= 4) return 'Table full — dealing…';
+    if (playerCount >= 2) return `Waiting — auto-starts in 10s once ready`;
+    return 'Waiting for players…';
+  })();
+
+  const statusBlock = (
+    <View style={styles.guest}>
+      <ActivityIndicator color={ART_DECO_PALETTE.goldLight} />
+      <Text style={styles.guestText}>{statusText}</Text>
+    </View>
+  );
+
+  if (quickMatch) {
+    return (
+      <View style={styles.wrap} pointerEvents="box-none">
+        <View style={styles.panel}>
+          <Text style={styles.label}>Online table</Text>
+          <Text style={styles.quickTitle}>
+            {playerCount >= 4
+              ? 'Table full'
+              : playerCount >= 2
+                ? 'Almost ready'
+                : 'Waiting for players…'}
+          </Text>
+          <Text style={styles.count}>{playerCount}/4 seated</Text>
+          <Text style={styles.hint}>
+            After 2 players join, the game auto-starts in 10 seconds with
+            whoever is seated (2, 3, or 4).
+          </Text>
+          {statusBlock}
+          <AppButton title="Leave table" variant="ghost" onPress={onLeave} />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.wrap} pointerEvents="box-none">
       <View style={styles.panel}>
@@ -76,6 +123,9 @@ export function TableLobbyControls({
           <Text style={styles.hint}>{copied ? 'Copied!' : 'Tap to copy'}</Text>
         </Pressable>
         <Text style={styles.count}>{playerCount}/4 at the table</Text>
+        <Text style={styles.hint}>
+          After 2 join, auto-starts in 10s with 2, 3, or 4 players.
+        </Text>
 
         <View style={styles.row}>
           <AppButton
@@ -96,24 +146,7 @@ export function TableLobbyControls({
           />
         </View>
 
-        {isHost ? (
-          <AppButton
-            title={
-              starting
-                ? 'Starting…'
-                : canStart
-                  ? 'Start Game'
-                  : 'Waiting for players…'
-            }
-            disabled={!canStart || starting}
-            onPress={onStart}
-          />
-        ) : (
-          <View style={styles.guest}>
-            <ActivityIndicator color={ART_DECO_PALETTE.goldLight} />
-            <Text style={styles.guestText}>Waiting for host to start…</Text>
-          </View>
-        )}
+        {statusBlock}
 
         <AppButton title="Leave" variant="ghost" onPress={onLeave} />
       </View>
@@ -123,7 +156,7 @@ export function TableLobbyControls({
 
 const styles = StyleSheet.create({
   wrap: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 40,
@@ -146,6 +179,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+  quickTitle: {
+    color: ART_DECO_PALETTE.goldLight,
+    fontSize: 18,
+    fontWeight: '900',
     textAlign: 'center',
   },
   code: {

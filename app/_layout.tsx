@@ -8,6 +8,9 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AnimatedSplash } from '@/src/components/ui/AnimatedSplash';
+import { AppDialog } from '@/src/components/ui/AppDialog';
+import { LandscapeGate } from '@/src/components/ui/LandscapeGate';
+import { NameGateModal } from '@/src/components/ui/NameGateModal';
 import { COLORS } from '@/src/constants/theme';
 import { initAudio, resetAudio } from '@/src/services/audio';
 import { loadPlayerName } from '@/src/services/online';
@@ -38,6 +41,7 @@ const LANDSCAPE_SCREENS = [
           'online/create',
           'online/join',
           'online/match',
+          'online/private',
           'lobby/[code]',
   'game/local',
   'game/bluff-local',
@@ -45,6 +49,7 @@ const LANDSCAPE_SCREENS = [
   'game/results',
   'game/pause',
   'rules/index',
+  'privacy',
   'settings/index',
   'stats/index',
 ] as const;
@@ -114,6 +119,9 @@ export default function RootLayout() {
         {ready && showSplash ? (
           <AnimatedSplash onDone={onSplashDone} />
         ) : null}
+        <AppDialog />
+        <NameGateModal />
+        <LandscapeGate />
       </ThemeProvider>
     </GestureHandlerRootView>
   );

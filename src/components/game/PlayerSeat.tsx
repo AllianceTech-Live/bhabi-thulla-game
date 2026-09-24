@@ -82,7 +82,8 @@ export function PlayerSeat({
   const count = player.hand.length;
   const escaped = player.status === 'escaped';
   const bhabhi = player.status === 'bhabhi';
-  const label = emptySeat ? '…' : isLocal ? 'You' : player.name;
+  const displayName = (player.name || '').trim() || (isLocal ? 'You' : 'Player');
+  const label = emptySeat ? '…' : displayName;
   const showCards = showFan && !waiting && !escaped && !bhabhi;
 
   const pulse = useSharedValue(1);
@@ -181,10 +182,14 @@ export function PlayerSeat({
       </View>
 
       {waiting ? (
-        <Text style={styles.statusWaiting}>
-          {emptySeat ? 'Waiting' : isLocal ? 'You' : 'Joined'}
+        <Text style={styles.statusWaiting} numberOfLines={1}>
+          {emptySeat ? 'Waiting' : displayName}
         </Text>
-      ) : null}
+      ) : (
+        <Text style={styles.nameplate} numberOfLines={1}>
+          {displayName}
+        </Text>
+      )}
       {bhabhi && <Text style={styles.statusText}>Bhabhi</Text>}
       {escaped && !bhabhi && (
         <Text style={styles.statusEscaped}>Escaped</Text>
@@ -269,48 +274,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   nameplate: {
-    marginTop: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(11,11,11,0.88)',
-    paddingLeft: 10,
-    paddingRight: 4,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(214,175,85,0.45)',
-    maxWidth: 130,
-    gap: 6,
-  },
-  nameplateActive: {
-    borderColor: ART_DECO_PALETTE.goldLight,
-    backgroundColor: 'rgba(11,11,11,0.95)',
-  },
-  name: {
-    color: colors.ivory,
-    fontSize: 11,
-    fontWeight: '700',
-    flexShrink: 1,
-  },
-  nameActive: {
+    marginTop: 3,
     color: ART_DECO_PALETTE.goldLight,
-  },
-  badge: {
-    minWidth: 22,
-    height: 22,
-    borderRadius: 4,
-    backgroundColor: ART_DECO_PALETTE.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  badgeActive: {
-    backgroundColor: ART_DECO_PALETTE.goldLight,
-  },
-  badgeText: {
-    color: '#1A120C',
-    fontSize: 11,
-    fontWeight: '900',
+    fontSize: 10,
+    fontWeight: '800',
+    maxWidth: 88,
+    textAlign: 'center',
   },
   statusText: {
     marginTop: 3,
@@ -330,6 +299,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.4,
+    maxWidth: 88,
+    textAlign: 'center',
   },
   waitingSeat: {
     opacity: 0.78,

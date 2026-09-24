@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import {
   Image,
   ImageBackground,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -9,6 +10,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { WebHome } from '@/src/components/marketing/WebHome';
 import { DeckOptionCard } from '@/src/components/ui/DeckOptionCard';
 import { GAME_ASSETS, ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import { APP_NAME, COLORS } from '@/src/constants/theme';
@@ -52,6 +54,10 @@ export default function HomeScreen() {
   const layout = useResponsiveLayout();
   const displayName = useSettingsStore((s) => s.displayName);
   const setSelectedGame = useGameCatalogStore((s) => s.setSelectedGame);
+
+  if (Platform.OS === 'web') {
+    return <WebHome />;
+  }
 
   const openGame = (id: CatalogGameId) => {
     setSelectedGame(id);

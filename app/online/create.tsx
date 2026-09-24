@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import { showAlert } from '@/src/services/dialogs';
 import {
   AppButton,
   Screen,
@@ -9,6 +10,7 @@ import {
 } from '@/src/components/ui/AppButton';
 import { COLORS } from '@/src/constants/theme';
 import { createRoom } from '@/src/services/online';
+import { requirePlayerName } from '@/src/store/nameGateStore';
 import { useSettingsStore } from '@/src/store/settingsStore';
 
 export default function CreateRoomScreen() {
@@ -18,10 +20,15 @@ export default function CreateRoomScreen() {
   const onCreate = async () => {
     setLoading(true);
     try {
-      const result = await createRoom(displayName || 'Host');
+      const name = await requirePlayerName();
+      const result = await createRoom(name);
       router.replace(`/game/${result.gameId}?code=${result.roomCode}`);
     } catch (e) {
-      Alert.alert('Could not create room', e instanceof Error ? e.message : 'Failed');
+      if (e instanceof Error && e.message === 'cancelled') return;
+      showAlert(
+        'Could not create room',
+        e instanceof Error ? e.message : 'Failed'
+      );
     } finally {
       setLoading(false);
     }

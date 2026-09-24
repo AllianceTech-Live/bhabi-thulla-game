@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import {
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,6 +27,8 @@ interface PlayerHandProps {
   hidden?: boolean;
   compact?: boolean;
   liftOnPress?: boolean;
+  /** When set, only these card ids are playable (e.g. opening Ace of Spades). */
+  playableIds?: string[] | null;
 }
 
 /**
@@ -42,6 +45,7 @@ export function PlayerHand({
   hidden,
   compact = false,
   liftOnPress = false,
+  playableIds = null,
 }: PlayerHandProps) {
   const { width, height } = useWindowDimensions();
   const long = Math.max(width, height);
@@ -49,9 +53,11 @@ export function PlayerHand({
     () => new Set(selectedIds ?? (selectedId ? [selectedId] : [])),
     [selectedIds, selectedId]
   );
-  const playable = interactive
-    ? new Set(getPlayableCards(hand, leadSuit).map((c) => c.id))
-    : new Set<string>();
+  const playable = useMemo(() => {
+    if (!interactive) return new Set<string>();
+    if (playableIds) return new Set(playableIds);
+    return new Set(getPlayableCards(hand, leadSuit).map((c) => c.id));
+  }, [interactive, playableIds, hand, leadSuit]);
 
   const cardW = compact ? CARD_STYLE.sizes.compact.w : CARD_STYLE.sizes.default.w;
   const cardH = compact ? CARD_STYLE.sizes.compact.h : CARD_STYLE.sizes.default.h;
@@ -77,47 +83,68 @@ export function PlayerHand({
     );
   }
 
+  const cards = hand.map((card, i) => {
+    const legal = interactive && playable.has(card.id);
+    const isSelected = selectedSet.has(card.id);
+    return (
+      <View
+        key={card.id}
+        // Web: wider hit target so overlapping fan peeks stay clickable
+        style={[
+          styles.slot,
+          {
+            marginLeft: i === 0 ? 0 : overlapMargin,
+            zIndex: isSelected ? 40 : i + 1,
+            height: cardH + LIFT_ROOM,
+            paddingTop: LIFT_ROOM,
+          },
+        ]}
+      >
+        {hidden ? (
+          <PlayingCard card={card} faceDown compact={compact} />
+        ) : (
+          <PlayingCard
+            card={card}
+            selected={legal && isSelected}
+            drop={!legal}
+            compact={compact}
+            liftOnPress={liftOnPress}
+            onPress={legal ? onSelect : undefined}
+          />
+        )}
+      </View>
+    );
+  });
+
+  const rowStyle = [
+    styles.row,
+    { minHeight: handHeight, paddingTop: 0, paddingBottom: DROP_ROOM },
+  ];
+
+  // Web ScrollView often swallows the 2nd click — use a plain row instead.
+  if (Platform.OS === 'web') {
+    return (
+      <View
+        style={[
+          styles.webRow,
+          { height: handHeight, maxWidth: long * 0.72 },
+        ]}
+      >
+        <View style={rowStyle}>{cards}</View>
+      </View>
+    );
+  }
+
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       style={{ height: handHeight }}
-      contentContainerStyle={[
-        styles.row,
-        { minHeight: handHeight, paddingTop: LIFT_ROOM, paddingBottom: DROP_ROOM },
-      ]}
+      contentContainerStyle={rowStyle}
       nestedScrollEnabled
+      keyboardShouldPersistTaps="handled"
     >
-      {hand.map((card, i) => {
-        const legal = interactive && playable.has(card.id);
-        const isSelected = selectedSet.has(card.id);
-        return (
-          <View
-            key={card.id}
-            style={[
-              styles.slot,
-              {
-                marginLeft: i === 0 ? 0 : overlapMargin,
-                zIndex: isSelected ? 30 : i + 1,
-                height: cardH,
-              },
-            ]}
-          >
-            {hidden ? (
-              <PlayingCard card={card} faceDown compact={compact} />
-            ) : (
-              <PlayingCard
-                card={card}
-                selected={legal && isSelected}
-                drop={!legal}
-                compact={compact}
-                liftOnPress={liftOnPress}
-                onPress={legal ? onSelect : undefined}
-              />
-            )}
-          </View>
-        );
-      })}
+      {cards}
     </ScrollView>
   );
 }
@@ -130,8 +157,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingBottom: 6,
   },
+  webRow: {
+    alignSelf: 'center',
+    overflow: 'visible',
+    ...(Platform.OS === 'web'
+      ? ({ touchAction: 'manipulation' } as object)
+      : null),
+  },
   slot: {
     justifyContent: 'flex-end',
+    ...(Platform.OS === 'web'
+      ? ({ touchAction: 'manipulation' } as object)
+      : null),
   },
   empty: {
     alignItems: 'center',

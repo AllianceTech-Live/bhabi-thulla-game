@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Pressable, StyleSheet, Platform } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -20,19 +20,13 @@ interface PlayingCardProps {
   disabled?: boolean;
   faceDown?: boolean;
   compact?: boolean;
-  /** Mini size for opponent fans */
   mini?: boolean;
-  /** Drawn size for a fixed table slot. Not a scale transform. */
   width?: number;
   height?: number;
-  /** Sit lower and ignore taps. Playable cards stay up and can lift. */
   drop?: boolean;
-  /** Lift slightly, then fire onPress (tap-to-play feel) */
   liftOnPress?: boolean;
   onPress?: (card: Card) => void;
 }
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function sizeFor(
   compact?: boolean,
@@ -47,8 +41,7 @@ function sizeFor(
 }
 
 /**
- * Interactive playing card. Faces are SVG/code-rendered (all 52 from CardFace).
- * Backs use Asset #4 production raster.
+ * Interactive playing card. Plain Pressable + animated child (reliable on web).
  */
 export function PlayingCard({
   card,
@@ -63,11 +56,16 @@ export function PlayingCard({
   liftOnPress = false,
   onPress,
 }: PlayingCardProps) {
-  const scale = useSharedValue(1);
   const lift = useSharedValue(drop ? 12 : 0);
+  const pressedAt = useRef(0);
   const { w, h } = sizeFor(compact, mini, width, height);
 
   useEffect(() => {
+    // Web: never slide the card out from under the pointer. One tap throws.
+    if (Platform.OS === 'web') {
+      lift.value = drop ? 12 : 0;
+      return;
+    }
     if (selected) {
       lift.value = withSpring(-18, { damping: 14, stiffness: 180 });
     } else if (drop) {
@@ -79,53 +77,59 @@ export function PlayingCard({
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: lift.value }],
-    zIndex: selected || lift.value < -4 ? 20 : 1,
   }));
+
+  const handlePress = () => {
+    const now = Date.now();
+    if (now - pressedAt.current < 400) return;
+    pressedAt.current = now;
+    void triggerHaptic('selection');
+    if (liftOnPress && Platform.OS !== 'web') {
+      lift.value = withTiming(-26, {
+        duration: GAME_TIMING.cardLiftMs,
+        easing: Easing.out(Easing.cubic),
+      });
+    }
+    onPress?.(card);
+  };
 
   if (faceDown) {
     return (
-      <CardBackView
-        width={w}
-        height={h}
-        glow={selected}
-        muted={disabled}
-      />
+      <CardBackView width={w} height={h} glow={selected} muted={disabled} />
     );
   }
 
   return (
-    <AnimatedPressable
+    <Pressable
       disabled={disabled || !onPress}
-      onPressIn={() => {
-        scale.value = 0.98;
-      }}
-      onPressOut={() => {
-        scale.value = 1;
-      }}
-      onPress={async () => {
-        await triggerHaptic('selection');
-        if (liftOnPress) {
-          lift.value = withTiming(-26, {
-            duration: GAME_TIMING.cardLiftMs,
-            easing: Easing.out(Easing.cubic),
-          });
-          setTimeout(() => {
-            onPress?.(card);
-          }, GAME_TIMING.cardLiftMs);
-          return;
-        }
-        onPress?.(card);
-      }}
+      onPress={handlePress}
+      onPressIn={Platform.OS === 'web' ? handlePress : undefined}
+      hitSlop={8}
       style={[
         styles.shadow,
-        { width: w, height: h, borderRadius: h * 0.08 },
+        {
+          width: w,
+          height: h,
+          borderRadius: h * 0.08,
+          zIndex: selected ? 20 : 1,
+          ...(Platform.OS === 'web' && onPress
+            ? ({
+                cursor: 'pointer',
+                touchAction: 'manipulation',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+                WebkitTapHighlightColor: 'transparent',
+              } as object)
+            : null),
+        },
         selected && styles.selected,
         disabled && styles.disabled,
-        animStyle,
       ]}
     >
-      <CardFace card={card} width={w} height={h} />
-    </AnimatedPressable>
+      <Animated.View style={[{ width: w, height: h }, animStyle]}>
+        <CardFace card={card} width={w} height={h} />
+      </Animated.View>
+    </Pressable>
   );
 }
 

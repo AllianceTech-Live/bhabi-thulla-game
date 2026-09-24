@@ -18,4 +18,6 @@ export const GAME_TIMING = {
   thullaSlamMs: 1500,
   /** Human must play within this window or Auto takes over */
   turnTimeoutMs: 10000,
+  /** Once 2+ are seated: auto-deal after this if table never hits 4 */
+  lobbyAutoStartMs: 10000,
 } as const;

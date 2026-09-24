@@ -3,6 +3,7 @@
  * Server validates every move; client never mutates authoritative state.
  */
 
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { getSupabase, isSupabaseConfigured } from './supabase';
 import { useSettingsStore } from '../store/settingsStore';
 import { useGameCatalogStore } from '../store/gameCatalogStore';
@@ -10,6 +11,48 @@ import type { GameState } from '../game/types';
 import type { BluffState } from '../game/bluff';
 import type { CatalogGameId } from '../store/gameCatalogStore';
 
+/** Pull the real `{ error }` body from Edge Function non-2xx responses. */
+async function edgeErrorMessage(
+  error: unknown,
+  data?: { error?: string } | null
+): Promise<string> {
+  if (data?.error) return data.error;
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const body = await error.context.json();
+      if (body && typeof body === 'object' && 'error' in body) {
+        const msg = (body as { error?: unknown }).error;
+        if (typeof msg === 'string' && msg.trim()) return msg;
+      }
+    } catch {
+      /* response body already consumed or not JSON */
+    }
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return 'Request failed';
+}
+
+/**
+ * Transient online races — refresh state instead of a scary popup.
+ * (timeout auto-play, concurrent start, stale turn, etc.)
+ */
+export function isOnlineRaceError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('non-2xx') ||
+    m.includes('already started') ||
+    m.includes('not your turn') ||
+    m.includes('not in playing') ||
+    m.includes('game is not in playing') ||
+    m.includes('no state') ||
+    m.includes('could not start game') ||
+    m.includes('need at least 2')
+  );
+}
+
+export function errorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : 'Error';
+}
 export function generateRoomCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -124,6 +167,20 @@ function generateMatchRoomCode(): string {
   return `MM${generateRoomCode().slice(0, 3)}`;
 }
 
+export function isQuickMatchRoom(roomCode: string | null | undefined): boolean {
+  return Boolean(roomCode && String(roomCode).toUpperCase().startsWith('MM'));
+}
+
+function shuffleInPlace<T>(items: T[]): T[] {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = items[i]!;
+    items[i] = items[j]!;
+    items[j] = tmp;
+  }
+  return items;
+}
+
 async function createRoomInternal(
   displayName: string,
   roomCode: string,
@@ -181,8 +238,9 @@ async function createRoomInternal(
 }
 
 /**
- * Find an open Quick Match table (needs 4 humans) or open a new one.
- * Seats you with other players who are also searching.
+ * Ludo-style Quick Match (server-atomic):
+ * fill an existing open MM table first; only create a new room when all
+ * current tables are full or none exist.
  */
 export async function quickMatch(displayName: string): Promise<{
   gameId: string;
@@ -195,62 +253,31 @@ export async function quickMatch(displayName: string): Promise<{
     );
   }
 
-  const userId = await ensureAnonymousSession();
+  await ensureAnonymousSession();
   const name = displayName.trim() || 'Player';
+  const gameType = useGameCatalogStore.getState().selectedGameId as CatalogGameId;
 
-  await sb.from('profiles').upsert({
-    id: userId,
-    display_name: name,
-    updated_at: new Date().toISOString(),
+  // Best-effort: clear abandoned empty MM lobbies so searches stay clean.
+  void sb.rpc('cleanup_stale_match_lobbies');
+
+  const { data, error } = await sb.rpc('quick_match_join', {
+    p_display_name: name,
+    p_game_type: gameType,
   });
 
-  // Prefer an existing open matchmaking lobby with free seats (same game type).
-  const gameType = useGameCatalogStore.getState().selectedGameId as CatalogGameId;
-  const { data: openGames, error: listError } = await sb
-    .from('games')
-    .select('id, room_code, max_players, game_type')
-    .eq('status', 'lobby')
-    .eq('game_type', gameType)
-    .like('room_code', 'MM%')
-    .order('created_at', { ascending: true })
-    .limit(12);
-
-  if (listError) {
-    throw new Error(listError.message);
+  if (error) {
+    throw new Error(error.message || 'Matchmaking failed');
   }
 
-  for (const game of openGames ?? []) {
-    const { count } = await sb
-      .from('game_players')
-      .select('*', { count: 'exact', head: true })
-      .eq('game_id', game.id);
+  const row = Array.isArray(data) ? data[0] : data;
+  const gameId = row?.out_game_id as string | undefined;
+  const roomCode = row?.out_room_code as string | undefined;
 
-    const n = count ?? 0;
-    if (n >= (game.max_players ?? 4)) continue;
-
-    // Already in this room?
-    const { data: existing } = await sb
-      .from('game_players')
-      .select('id')
-      .eq('game_id', game.id)
-      .eq('player_id', userId)
-      .maybeSingle();
-
-    if (existing) {
-      return { gameId: game.id, roomCode: game.room_code };
-    }
-
-    try {
-      const joined = await joinRoom(game.room_code, name);
-      await setReady(joined.gameId, true);
-      return joined;
-    } catch {
-      // Full or raced — try next
-    }
+  if (!gameId || !roomCode) {
+    throw new Error('Matchmaking returned no table');
   }
 
-  // No open table — host a new Quick Match lobby.
-  return createRoomInternal(name, generateMatchRoomCode(), true);
+  return { gameId, roomCode };
 }
 
 export async function joinRoom(
@@ -362,8 +389,9 @@ export async function startGame(gameId: string): Promise<void> {
     body: { gameId },
   });
 
-  if (error) throw new Error(error.message);
-  if (data?.error) throw new Error(data.error);
+  if (error || data?.error) {
+    throw new Error(await edgeErrorMessage(error, data));
+  }
 }
 
 export async function playOnlineCard(
@@ -377,8 +405,9 @@ export async function playOnlineCard(
     body: { gameId, cardId },
   });
 
-  if (error) throw new Error(error.message);
-  if (data?.error) throw new Error(data.error);
+  if (error || data?.error) {
+    throw new Error(await edgeErrorMessage(error, data));
+  }
   return data.state as GameState;
 }
 
@@ -399,8 +428,9 @@ export async function submitBluffMove(
     body: { gameId, ...body },
   });
 
-  if (error) throw new Error(error.message);
-  if (data?.error) throw new Error(data.error);
+  if (error || data?.error) {
+    throw new Error(await edgeErrorMessage(error, data));
+  }
   return data.state as BluffState;
 }
 
@@ -440,8 +470,9 @@ export async function fetchOnlineSnapshot(
     body: { gameId },
   });
 
-  if (error) throw new Error(error.message);
-  if (data?.error) throw new Error(data.error);
+  if (error || data?.error) {
+    throw new Error(await edgeErrorMessage(error, data));
+  }
   if (!data?.state) return null;
   return {
     status: data.status,

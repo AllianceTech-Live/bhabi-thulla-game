@@ -340,7 +340,13 @@ export function GameChrome({
         ]}
         pointerEvents="box-none"
       >
-        <Pressable onPress={onExit} style={[styles.exitBtn, { marginLeft: room.leftNudge }]}>
+        <Pressable
+          onPress={() => onExit?.()}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Exit game"
+          style={[styles.exitBtn, { marginLeft: room.leftNudge }]}
+        >
           <Text style={styles.exitText}>Exit</Text>
         </Pressable>
 

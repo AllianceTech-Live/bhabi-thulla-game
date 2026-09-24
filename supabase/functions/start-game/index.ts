@@ -36,18 +36,29 @@ Deno.serve(async (req) => {
     const { gameId } = await req.json();
     if (!gameId) return json({ error: 'gameId required' }, 400);
 
+    const { data: membership } = await admin
+      .from('game_players')
+      .select('id')
+      .eq('game_id', gameId)
+      .eq('player_id', user.id)
+      .maybeSingle();
+
+    if (!membership) return json({ error: 'Forbidden' }, 403);
+
     const { data: game } = await admin
       .from('games')
-      .select('id, host_id, status, game_type')
+      .select('id, host_id, status, game_type, game_state')
       .eq('id', gameId)
       .single();
 
     if (!game) return json({ error: 'Game not found' }, 404);
-    if (game.host_id !== user.id) {
-      return json({ error: 'Only host can start' }, 403);
-    }
-    if (game.status === 'playing') {
-      return json({ error: 'Already started' }, 400);
+
+    const isBluff = game.game_type === 'bluff';
+    const gameType = isBluff ? 'bluff' : 'thulla';
+
+    // Idempotent: concurrent / late callers get the live state instead of an error.
+    if (game.status === 'playing' && game.game_state) {
+      return json({ state: game.game_state, gameType, alreadyStarted: true });
     }
 
     const { data: players } = await admin
@@ -63,13 +74,14 @@ Deno.serve(async (req) => {
       return json({ error: 'Max 4 players' }, 400);
     }
 
+    // Online has no host Start — any seated player may trigger auto-deal.
+
     const configs = players.map((p) => ({
       id: p.player_id,
       name: p.display_name,
       type: 'human' as const,
     }));
 
-    const isBluff = game.game_type === 'bluff';
     const state = isBluff
       ? createBluffGame({ gameId, playerConfigs: configs })
       : createGame({
@@ -78,7 +90,7 @@ Deno.serve(async (req) => {
           playerConfigs: configs,
         });
 
-    await admin
+    const { data: claimed } = await admin
       .from('games')
       .update({
         status: 'playing',
@@ -86,7 +98,27 @@ Deno.serve(async (req) => {
         current_turn: state.currentTurnPlayerId,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', gameId);
+      .eq('id', gameId)
+      .in('status', ['lobby', 'waiting'])
+      .select('id')
+      .maybeSingle();
+
+    // Lost the race — another client already started.
+    if (!claimed) {
+      const { data: current } = await admin
+        .from('games')
+        .select('game_state, game_type, status')
+        .eq('id', gameId)
+        .single();
+      if (current?.status === 'playing' && current.game_state) {
+        return json({
+          state: current.game_state,
+          gameType: current.game_type === 'bluff' ? 'bluff' : 'thulla',
+          alreadyStarted: true,
+        });
+      }
+      return json({ error: 'Could not start game' }, 409);
+    }
 
     for (const p of state.players) {
       await admin
@@ -100,7 +132,7 @@ Deno.serve(async (req) => {
         .eq('player_id', p.id);
     }
 
-    return json({ state, gameType: isBluff ? 'bluff' : 'thulla' });
+    return json({ state, gameType });
   } catch (e) {
     return json(
       { error: e instanceof Error ? e.message : 'Server error' },

@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "bhabithulla-8ec9a"
+  },
+  "targets": {
+    "bhabithulla-8ec9a": {
+      "hosting": {
+        "web": [
+          "bhabithullagame"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

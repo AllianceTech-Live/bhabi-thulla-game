@@ -24,6 +24,7 @@ import { useRoomLayout } from '@/src/hooks/useRoomLayout';
 import { useTableMusic } from '@/src/hooks/useTableMusic';
 import { useTurnTimer } from '@/src/hooks/useTurnTimer';
 import { playSfx, stopMusic } from '@/src/services/audio';
+import { showConfirm } from '@/src/services/dialogs';
 import { lockLandscapeOrientation } from '@/src/services/orientation';
 import { triggerHaptic } from '@/src/services/haptics';
 import { useBluffStore } from '@/src/store/bluffStore';
@@ -646,10 +647,19 @@ export default function BluffLocalScreen() {
           }
           yourTurn={!!isMyTurn && !dealing && !collectTo && !revealFaceUp}
           onExit={() => {
-            clear();
-            void stopMusic();
-            void lockLandscapeOrientation();
-            router.replace('/');
+            showConfirm('Leave game?', 'Progress will be lost.', [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Leave',
+                style: 'destructive',
+                onPress: () => {
+                  clear();
+                  void stopMusic();
+                  void lockLandscapeOrientation();
+                  router.replace('/');
+                },
+              },
+            ]);
           }}
         />
       </View>

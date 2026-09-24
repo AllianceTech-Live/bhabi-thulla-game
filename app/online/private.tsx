@@ -12,15 +12,15 @@ import { requirePlayerName } from '@/src/store/nameGateStore';
 import { isSupabaseConfigured } from '@/src/services/supabase';
 
 /**
- * Online = public Quick Match (Ludo-style find players).
+ * Private Table — invite friends with a room code (Create or Join).
  */
-export default function OnlineHomeScreen() {
+export default function PrivateTableScreen() {
   const ready = isSupabaseConfigured;
 
-  const goMatch = async () => {
+  const go = async (path: '/online/create' | '/online/join') => {
     try {
       await requirePlayerName();
-      router.push('/online/match');
+      router.push(path);
     } catch {
       /* cancelled */
     }
@@ -29,47 +29,41 @@ export default function OnlineHomeScreen() {
   return (
     <Screen centered>
       <Text style={styles.suits}>♠  ♥  ♦  ♣</Text>
-      <Title>Online</Title>
-      <Subtitle>Find players · sit at the table · auto-starts</Subtitle>
+      <Title>Private Table</Title>
+      <Subtitle>Play with friends · room code · max 4</Subtitle>
 
       {!ready ? (
         <View style={styles.warn}>
           <Text style={styles.warnText}>
             Supabase is not configured. Add your project URL and anon key in
-            .env to enable online play.
+            .env to enable private rooms.
           </Text>
         </View>
       ) : null}
 
       <View style={styles.cardRow}>
         <DeckOptionCard
-          label="Quick Match"
-          sub="Search online now"
-          glyph="≫"
-          image={GAME_ASSETS.thullaEffect}
+          label="Create Room"
+          sub="Get a code to share"
+          glyph="✦"
+          image={GAME_ASSETS.tableComposition}
           primary
           disabled={!ready}
-          onPress={() => void goMatch()}
+          onPress={() => void go('/online/create')}
+        />
+        <DeckOptionCard
+          label="Join Room"
+          sub="Enter a friend’s code"
+          glyph="◎"
+          image={GAME_ASSETS.playerFrame}
+          disabled={!ready}
+          onPress={() => void go('/online/join')}
         />
       </View>
 
       <Text style={styles.hint}>
-        You’ll be seated randomly with other players looking for a game.
-      </Text>
-      <Text
-        style={styles.link}
-        onPress={() => {
-          void (async () => {
-            try {
-              await requirePlayerName();
-              router.push('/online/private');
-            } catch {
-              /* cancelled */
-            }
-          })();
-        }}
-      >
-        Prefer a private table with friends? →
+        Game starts automatically when enough players are seated — no host
+        needed.
       </Text>
       <Text style={styles.disclaimer}>
         No gambling · No betting · No real money
@@ -90,10 +84,10 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 10,
+    gap: 12,
     width: '100%',
     marginTop: 18,
-    maxWidth: 280,
+    maxWidth: 420,
     alignSelf: 'center',
   },
   warn: {
@@ -113,22 +107,15 @@ const styles = StyleSheet.create({
     color: 'rgba(247,241,227,0.72)',
     fontSize: 12,
     marginTop: 16,
-    maxWidth: 360,
+    maxWidth: 380,
     alignSelf: 'center',
     lineHeight: 18,
-  },
-  link: {
-    textAlign: 'center',
-    color: ART_DECO_PALETTE.gold,
-    fontWeight: '800',
-    fontSize: 13,
-    marginTop: 12,
   },
   disclaimer: {
     textAlign: 'center',
     color: 'rgba(138,154,148,0.85)',
     fontSize: 10,
     letterSpacing: 0.4,
-    marginTop: 14,
+    marginTop: 12,
   },
 });

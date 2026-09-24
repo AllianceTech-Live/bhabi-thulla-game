@@ -40,7 +40,7 @@ const SOURCES: Record<SfxName, number> = {
   /** Soft dry tick when turn passes without a throw. */
   pass_turn: require('../../assets/sounds/turn-tick.wav'),
   stage: require('../../assets/sounds/stage.wav'),
-  /** Spoken "Thulla!" shout (Lahore 3 take) on slam. */
+  /** Spoken "Thulla!" shout on slam. */
   thulla: require('../../assets/sounds/thulla.wav'),
   /** Spoken "Bluff!" shout when a liar is caught. */
   bluff: require('../../assets/sounds/bluff.wav'),

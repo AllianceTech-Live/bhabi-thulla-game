@@ -2,115 +2,114 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import {
   AppButton,
   Screen,
   Subtitle,
   Title,
 } from '@/src/components/ui/AppButton';
-import { GAME_ASSETS, ART_DECO_PALETTE } from '@/src/constants/gameAssets';
+import { ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import { COLORS } from '@/src/constants/theme';
-import { quickMatch } from '@/src/services/online';
-import { cachedAssetSource } from '@/src/services/preloadAssets';
-import { useSettingsStore } from '@/src/store/settingsStore';
+import { leaveRoom, quickMatch } from '@/src/services/online';
+import { playSfx } from '@/src/services/audio';
+import { requirePlayerName } from '@/src/store/nameGateStore';
 
 /**
- * Quick Match — find other players who are searching and seat 4 at a table.
+ * Quick Match — find/create a public table, then enter the game room
+ * immediately and wait on the felt (Ludo-style), not on this screen.
  */
 export default function QuickMatchScreen() {
-  const displayName = useSettingsStore((s) => s.displayName);
-  const [status, setStatus] = useState('Looking for players…');
+  const [status, setStatus] = useState('Finding a table…');
   const [error, setError] = useState<string | null>(null);
   const cancelled = useRef(false);
+  const seatedGameId = useRef<string | null>(null);
 
-  const search = useCallback(async () => {
+  const cancelAndLeave = useCallback(async () => {
+    cancelled.current = true;
+    const id = seatedGameId.current;
+    seatedGameId.current = null;
+    if (id) {
+      try {
+        await leaveRoom(id);
+      } catch {
+        // ignore
+      }
+    }
+    router.replace('/online');
+  }, []);
+
+  const beginSearch = useCallback(async () => {
     setError(null);
-    setStatus('Looking for players…');
+    setStatus('Finding a table…');
     cancelled.current = false;
+    seatedGameId.current = null;
+
     try {
-      const result = await quickMatch(displayName || 'Player');
+      const name = await requirePlayerName();
       if (cancelled.current) return;
-      if (!result) {
-        setError('Could not find a table. Try again.');
+      const result = await quickMatch(name);
+      if (cancelled.current) {
+        await leaveRoom(result.gameId).catch(() => undefined);
         return;
       }
-      setStatus('Table found — opening…');
-      router.replace(
-        `/game/${result.gameId}?code=${result.roomCode}`
-      );
+      seatedGameId.current = result.gameId;
+      setStatus('Entering table…');
+      void playSfx('click');
+      router.replace(`/game/${result.gameId}?code=${result.roomCode}`);
     } catch (e) {
       if (cancelled.current) return;
+      if (e instanceof Error && e.message === 'cancelled') {
+        router.replace('/online');
+        return;
+      }
       setError(e instanceof Error ? e.message : 'Matchmaking failed');
     }
-  }, [displayName]);
+  }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      void search();
-    }, 0);
+    void beginSearch();
     return () => {
       cancelled.current = true;
-      clearTimeout(t);
     };
-  }, [search]);
+  }, [beginSearch]);
 
   return (
     <Screen
       centered
       onBack={() => {
-        cancelled.current = true;
-        router.replace('/online');
+        void cancelAndLeave();
       }}
     >
       <Text style={styles.suits}>♠  ♥  ♦  ♣</Text>
       <Title>Quick Match</Title>
-      <Subtitle>Find 3 other players · 4 at a table</Subtitle>
+      <Subtitle>Opening your online table…</Subtitle>
 
-      <View style={styles.heroCard}>
-        <Image
-          source={cachedAssetSource(GAME_ASSETS.thullaEffect)}
-          style={styles.heroDeck}
-          resizeMode="cover"
-        />
-        <LinearGradient
-          colors={[
-            'rgba(4,12,10,0.25)',
-            'rgba(4,12,10,0.55)',
-            'rgba(4,12,10,0.94)',
-          ]}
-          locations={[0.15, 0.5, 1]}
-          style={styles.heroFade}
-        />
-        <View style={styles.heroBody}>
-          {!error ? (
-            <>
-              <ActivityIndicator color={ART_DECO_PALETTE.goldLight} size="large" />
-              <Text style={styles.status}>{status}</Text>
-              <Text style={styles.hint}>
-                Playing as {displayName || 'Player'}
-              </Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.error}>{error}</Text>
-              <AppButton title="Try again" onPress={() => void search()} />
-            </>
-          )}
-        </View>
+      <View style={styles.card}>
+        {!error ? (
+          <>
+            <ActivityIndicator color={ART_DECO_PALETTE.goldLight} size="large" />
+            <Text style={styles.status}>{status}</Text>
+            <Text style={styles.hint}>
+              You’ll wait on the felt while players join
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.error}>{error}</Text>
+            <AppButton title="Try again" onPress={() => void beginSearch()} />
+          </>
+        )}
       </View>
 
       <AppButton
         title="Cancel"
         variant="ghost"
         onPress={() => {
-          cancelled.current = true;
-          router.replace('/online');
+          void cancelAndLeave();
         }}
       />
     </Screen>
@@ -126,34 +125,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 4,
   },
-  heroCard: {
-    marginTop: 16,
+  card: {
+    marginTop: 20,
     marginBottom: 16,
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 340,
     alignSelf: 'center',
-    minHeight: 168,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: ART_DECO_PALETTE.goldLight,
-    backgroundColor: ART_DECO_PALETTE.emeraldDark,
-    shadowColor: ART_DECO_PALETTE.gold,
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 8,
-  },
-  heroDeck: {
-    ...StyleSheet.absoluteFill,
-  },
-  heroFade: {
-    ...StyleSheet.absoluteFill,
-  },
-  heroBody: {
-    zIndex: 2,
     paddingVertical: 28,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(214,175,85,0.55)',
+    backgroundColor: 'rgba(4,12,10,0.88)',
     alignItems: 'center',
     gap: 12,
   },
@@ -162,15 +145,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
-  hint: { color: 'rgba(247,241,227,0.72)', fontSize: 12 },
+  hint: {
+    color: 'rgba(247,241,227,0.65)',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   error: {
     color: COLORS.warning,
     textAlign: 'center',
-    marginBottom: 4,
     lineHeight: 20,
   },
 });

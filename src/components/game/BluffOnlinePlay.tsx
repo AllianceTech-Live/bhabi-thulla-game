@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { showAlert } from '@/src/services/dialogs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { GameChrome } from '@/src/components/game/GameChrome';
@@ -27,6 +27,8 @@ import {
   fetchOnlineSnapshot,
   leaveRoom,
   submitBluffMove,
+  isOnlineRaceError,
+  errorMessage,
 } from '@/src/services/online';
 import { playSfx, stopMusic } from '@/src/services/audio';
 import { lockLandscapeOrientation } from '@/src/services/orientation';
@@ -285,9 +287,22 @@ export function BluffOnlinePlay({
         setSelectedCardIds([]);
         applyState(next);
       })
-      .catch((e) => {
-        setLastError(e instanceof Error ? e.message : 'Auto-move failed');
+      .catch(async (e) => {
+        const msg = errorMessage(e);
         void playSfx('error');
+        // Timeout auto-move often races — refresh instead of a blocking alert.
+        try {
+          const snap = await fetchOnlineSnapshot(gameId);
+          if (snap?.gameType === 'bluff' && snap.state) {
+            applyState(snap.state as BluffState);
+            return;
+          }
+        } catch {
+          /* fall through */
+        }
+        if (!isOnlineRaceError(msg)) {
+          setLastError(msg);
+        }
       })
       .finally(() => setSubmitting(false));
   }, [submitting, state, userId, gameId, applyState]);
@@ -333,8 +348,20 @@ export function BluffOnlinePlay({
       void playSfx('card_throw');
       void triggerHaptic('light');
     } catch (e) {
-      setLastError(e instanceof Error ? e.message : 'Move failed');
       void playSfx('error');
+      const msg = errorMessage(e);
+      if (isOnlineRaceError(msg)) {
+        try {
+          const snap = await fetchOnlineSnapshot(gameId);
+          if (snap?.gameType === 'bluff' && snap.state) {
+            applyState(snap.state as BluffState);
+          }
+        } catch {
+          /* ignore */
+        }
+      } else {
+        setLastError(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -524,12 +551,21 @@ export function BluffOnlinePlay({
                       applyState(next);
                       setSelectedCardIds([]);
                     })
-                    .catch((e) => {
-                      Alert.alert(
-                        'Call failed',
-                        e instanceof Error ? e.message : 'Error'
-                      );
+                    .catch(async (e) => {
                       void playSfx('error');
+                      const msg = errorMessage(e);
+                      if (isOnlineRaceError(msg)) {
+                        try {
+                          const snap = await fetchOnlineSnapshot(gameId);
+                          if (snap?.gameType === 'bluff' && snap.state) {
+                            applyState(snap.state as BluffState);
+                          }
+                        } catch {
+                          /* ignore */
+                        }
+                        return;
+                      }
+                      showAlert('Call failed', msg);
                     })
                     .finally(() => setSubmitting(false));
                 }}
@@ -551,11 +587,21 @@ export function BluffOnlinePlay({
                       setSelectedCardIds([]);
                       void playSfx('pass_turn');
                     })
-                    .catch((e) => {
-                      setLastError(
-                        e instanceof Error ? e.message : 'Pass failed'
-                      );
+                    .catch(async (e) => {
                       void playSfx('error');
+                      const msg = errorMessage(e);
+                      if (isOnlineRaceError(msg)) {
+                        try {
+                          const snap = await fetchOnlineSnapshot(gameId);
+                          if (snap?.gameType === 'bluff' && snap.state) {
+                            applyState(snap.state as BluffState);
+                          }
+                        } catch {
+                          /* ignore */
+                        }
+                        return;
+                      }
+                      setLastError(msg);
                     })
                     .finally(() => setSubmitting(false));
                 }}

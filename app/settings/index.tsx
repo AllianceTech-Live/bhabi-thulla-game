@@ -1,14 +1,6 @@
 import { useState } from 'react';
-import {
-  Alert,
-  Image,
-  Keyboard,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Image, Keyboard, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { showAlert } from '@/src/services/dialogs';
 import {
   AppButton,
   Screen,
@@ -51,7 +43,7 @@ export default function SettingsScreen() {
   const onSaveName = async () => {
     const trimmed = nameDraft.trim();
     if (!trimmed) {
-      Alert.alert('Name required', 'Enter a display name to save.');
+      showAlert('Name required', 'Enter a display name to save.');
       return;
     }
     setSaving(true);
@@ -59,9 +51,9 @@ export default function SettingsScreen() {
       await savePlayerName(trimmed);
       setNameDraft(trimmed);
       Keyboard.dismiss();
-      Alert.alert('Saved', `Playing as ${trimmed}`);
+      showAlert('Saved', `Playing as ${trimmed}`);
     } catch {
-      Alert.alert('Could not save', 'Try again in a moment.');
+      showAlert('Could not save', 'Try again in a moment.');
     } finally {
       setSaving(false);
     }
