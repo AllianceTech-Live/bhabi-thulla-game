@@ -22,6 +22,8 @@ interface BluffStore {
   playSelected: (playerId: string, rank?: Rank) => boolean;
   call: (callerId: string) => boolean;
   pass: (playerId: string) => boolean;
+  /** AI or human turn timeout — applies chooseBluffAction for current seat. */
+  autoPlayCurrentTurn: () => boolean;
   runAiIfNeeded: () => void;
   clear: () => void;
   clearError: () => void;
@@ -139,21 +141,33 @@ export const useBluffStore = create<BluffStore>((set, get) => ({
     return true;
   },
 
-  runAiIfNeeded: () => {
+  autoPlayCurrentTurn: () => {
     const { state } = get();
+    if (!state || state.phase !== 'playing') return false;
+    const turnId = state.currentTurnPlayerId;
+    if (!turnId) return false;
+    const result = chooseBluffAction(state, turnId);
+    if (!result.success) {
+      set({ lastError: result.error ?? 'Auto-play failed' });
+      return false;
+    }
+    set({
+      state: result.state,
+      selectedCardIds: [],
+      claimRank: result.state.requiredRank,
+      lastError: null,
+    });
+    return true;
+  },
+
+  runAiIfNeeded: () => {
+    const { state, autoPlayCurrentTurn } = get();
     if (!state || state.phase !== 'playing') return;
     const turnId = state.currentTurnPlayerId;
     if (!turnId) return;
     const p = state.players.find((x) => x.id === turnId);
     if (!p || p.type !== 'ai') return;
-    const result = chooseBluffAction(state, turnId);
-    if (result.success) {
-      set({
-        state: result.state,
-        claimRank: result.state.requiredRank,
-        lastError: null,
-      });
-    }
+    autoPlayCurrentTurn();
   },
 
   clear: () =>

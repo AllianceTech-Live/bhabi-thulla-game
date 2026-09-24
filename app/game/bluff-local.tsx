@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -22,6 +22,7 @@ import type { Card, GameState, Rank, TrickPlay } from '@/src/game/types';
 import { RANKS } from '@/src/game/types';
 import { useRoomLayout } from '@/src/hooks/useRoomLayout';
 import { useTableMusic } from '@/src/hooks/useTableMusic';
+import { useTurnTimer } from '@/src/hooks/useTurnTimer';
 import { playSfx, stopMusic } from '@/src/services/audio';
 import { lockLandscapeOrientation } from '@/src/services/orientation';
 import { triggerHaptic } from '@/src/services/haptics';
@@ -104,6 +105,7 @@ export default function BluffLocalScreen() {
   const call = useBluffStore((s) => s.call);
   const pass = useBluffStore((s) => s.pass);
   const runAiIfNeeded = useBluffStore((s) => s.runAiIfNeeded);
+  const autoPlayCurrentTurn = useBluffStore((s) => s.autoPlayCurrentTurn);
   const clear = useBluffStore((s) => s.clear);
 
   const [statusFlash, setStatusFlash] = useState('');
@@ -118,6 +120,43 @@ export default function BluffLocalScreen() {
 
   const meId = localHumanIds[0] ?? null;
   const isMyTurn = state?.currentTurnPlayerId === meId;
+  const me = state?.players.find((p) => p.id === meId);
+  const canInteract =
+    Boolean(
+      state &&
+        !dealing &&
+        isMyTurn &&
+        me &&
+        me.finishOrder == null &&
+        !collectTo &&
+        !revealFaceUp &&
+        state.phase === 'playing'
+    );
+
+  const onTurnTimeout = useCallback(() => {
+    setClaimSheetOpen(false);
+    setSheetRank(null);
+    void triggerHaptic('warning');
+    void playSfx('pass_turn');
+    autoPlayCurrentTurn();
+  }, [autoPlayCurrentTurn]);
+
+  const turnKey =
+    state &&
+    !dealing &&
+    state.phase === 'playing' &&
+    !collectTo &&
+    !revealFaceUp &&
+    state.currentTurnPlayerId
+      ? `${state.currentTurnPlayerId}:${state.events.length}:${state.pile.length}`
+      : null;
+
+  const { secondsLeft, progress: turnProgress } = useTurnTimer({
+    turnKey,
+    durationMs: GAME_TIMING.turnTimeoutMs,
+    enableTimeout: canInteract,
+    onTimeout: onTurnTimeout,
+  });
 
   useEffect(() => {
     if (!state) return;
@@ -246,7 +285,6 @@ export default function BluffLocalScreen() {
     );
   }
 
-  const me = state.players.find((p) => p.id === meId);
   const freeClaim = !state.requiredRank;
   const canCall =
     Boolean(
@@ -329,6 +367,9 @@ export default function BluffLocalScreen() {
               setHeldPlays(null);
               setRevealFaceUp(false);
             }}
+            turnSeconds={secondsLeft}
+            turnProgress={turnProgress}
+            turnDurationSec={Math.round(GAME_TIMING.turnTimeoutMs / 1000)}
           />
           {dealing ? (
             <DealAnimation

@@ -17,11 +17,12 @@ import { AppButton } from '@/src/components/ui/AppButton';
 import { ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import { GAME_THEME } from '@/src/constants/gameTheme';
 import { GAME_TIMING } from '@/src/constants/timing';
-import type { BluffState } from '@/src/game/bluff';
+import { decideBluffMove, type BluffState } from '@/src/game/bluff';
 import type { Card, GameState, Rank, TrickPlay } from '@/src/game/types';
 import { RANKS } from '@/src/game/types';
 import { useRoomLayout } from '@/src/hooks/useRoomLayout';
 import { useTableMusic } from '@/src/hooks/useTableMusic';
+import { useTurnTimer } from '@/src/hooks/useTurnTimer';
 import {
   fetchOnlineSnapshot,
   leaveRoom,
@@ -253,6 +254,60 @@ export function BluffOnlinePlay({
   const canThrow = throwCount >= 1 && throwCount <= 4;
   const cardsPerPlayer = Math.ceil(52 / state.players.length);
 
+  const canInteract =
+    !dealing &&
+    isMyTurn &&
+    Boolean(me && me.finishOrder == null) &&
+    !collectTo &&
+    !revealFaceUp &&
+    !submitting &&
+    state.phase === 'playing';
+
+  const onTurnTimeout = useCallback(() => {
+    if (submitting) return;
+    setClaimSheetOpen(false);
+    setSheetRank(null);
+    void triggerHaptic('warning');
+    void playSfx('pass_turn');
+    const decision = decideBluffMove(state, userId);
+    if (!decision) return;
+    setSubmitting(true);
+    const payload =
+      decision.action === 'call'
+        ? { action: 'call' as const }
+        : {
+            action: 'play' as const,
+            cardIds: decision.cardIds,
+            claimedRank: decision.claimedRank,
+          };
+    void submitBluffMove(gameId, payload)
+      .then((next) => {
+        setSelectedCardIds([]);
+        applyState(next);
+      })
+      .catch((e) => {
+        setLastError(e instanceof Error ? e.message : 'Auto-move failed');
+        void playSfx('error');
+      })
+      .finally(() => setSubmitting(false));
+  }, [submitting, state, userId, gameId, applyState]);
+
+  const turnKey =
+    !dealing &&
+    state.phase === 'playing' &&
+    !collectTo &&
+    !revealFaceUp &&
+    state.currentTurnPlayerId
+      ? `${state.currentTurnPlayerId}:${state.events.length}:${state.pile.length}`
+      : null;
+
+  const { secondsLeft, progress: turnProgress } = useTurnTimer({
+    turnKey,
+    durationMs: GAME_TIMING.turnTimeoutMs,
+    enableTimeout: canInteract,
+    onTimeout: onTurnTimeout,
+  });
+
   const toggleCard = (cardId: string) => {
     setSelectedCardIds((prev) => {
       if (prev.includes(cardId)) return prev.filter((id) => id !== cardId);
@@ -334,6 +389,9 @@ export function BluffOnlinePlay({
             setRevealFaceUp(false);
             void refresh();
           }}
+          turnSeconds={secondsLeft}
+          turnProgress={turnProgress}
+          turnDurationSec={Math.round(GAME_TIMING.turnTimeoutMs / 1000)}
         />
         {dealing ? (
           <DealAnimation
