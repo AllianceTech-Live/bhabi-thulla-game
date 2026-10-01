@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppButton } from '@/src/components/ui/AppButton';
 import { ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import { GAME_THEME } from '@/src/constants/gameTheme';
+import { showAd } from '@/src/services/ads';
 
 const { colors } = GAME_THEME;
 
@@ -131,6 +132,13 @@ export function GameOverScreen({
       )
     );
   }, [pulse]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void showAd('between_rounds_interstitial');
+    }, 900);
+    return () => clearTimeout(t);
+  }, []);
 
   const badgeStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value }],

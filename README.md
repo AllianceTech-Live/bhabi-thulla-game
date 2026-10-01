@@ -73,4 +73,4 @@ Configure `extra.eas.projectId` in `app.json` first.
 
 ## Ads
 
-Not implemented in v1. See `src/services/ads.ts` for placement hooks that refuse to interrupt an active turn.
+Android only (AdMob via `react-native-google-mobile-ads`). Banner on home; interstitial after results / game over. Never during an active turn. Set `ADMOB_ANDROID_APP_ID` + unit IDs in EAS env for production; defaults use Google sample IDs. Requires a new native Android build (not Expo Go).

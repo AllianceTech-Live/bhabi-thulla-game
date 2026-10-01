@@ -13,6 +13,7 @@ import { LandscapeGate } from '@/src/components/ui/LandscapeGate';
 import { NameGateModal } from '@/src/components/ui/NameGateModal';
 import { COLORS } from '@/src/constants/theme';
 import { initAudio, resetAudio } from '@/src/services/audio';
+import { initAds } from '@/src/services/ads';
 import { loadPlayerName } from '@/src/services/online';
 import { lockLandscapeOrientation } from '@/src/services/orientation';
 import { preloadGameAssets } from '@/src/services/preloadAssets';
@@ -68,6 +69,7 @@ export default function RootLayout() {
       resetAudio();
       await initAudio();
     })();
+    void initAds();
     void loadPlayerName();
     void lockLandscapeOrientation();
     void preloadGameAssets().finally(() => {

@@ -1,13 +1,13 @@
 /** Privacy Policy copy for web + App Store listings. */
 export const PRIVACY_POLICY = {
   title: 'Privacy Policy',
-  effectiveDate: 'September 24, 2026',
+  effectiveDate: 'October 2, 2026',
   intro:
     'Bhabi Thulla (“we”, “us”, or “the App”) is a free social card game. This policy explains what information we collect, how we use it, and the choices you have. We do not sell your data and we do not run real-money gambling.',
   sections: [
     {
       heading: '1. Who this applies to',
-      body: 'This policy covers the Bhabi Thulla website, the iOS app, and related online multiplayer services. By using the App, you agree to this policy.',
+      body: 'This policy covers the Bhabi Thulla website, the iOS app, the Android app, and related online multiplayer services. By using the App, you agree to this policy.',
     },
     {
       heading: '2. Information we collect',
@@ -27,7 +27,7 @@ export const PRIVACY_POLICY = {
     },
     {
       heading: '6. Third-party services',
-      body: 'We may use trusted providers for hosting, databases, and app distribution (including Apple App Store). Those providers process data only as needed to deliver their service under their own policies. If we add analytics or ads later, we will update this policy before they go live.',
+      body: 'We may use trusted providers for hosting, databases, app distribution (including Apple App Store and Google Play), and advertising. On Android we may show ads via Google AdMob. Ad networks may collect device and usage information under their own policies to deliver and measure ads. We do not sell your personal information. You can learn more in Google’s advertising policies.',
     },
     {
       heading: '7. Children',

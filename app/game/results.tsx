@@ -27,6 +27,7 @@ import { BackHeader } from '@/src/components/ui/BackHeader';
 import { GAME_THEME } from '@/src/constants/gameTheme';
 import { useResponsiveLayout } from '@/src/hooks/useResponsiveLayout';
 import { useGameStore } from '@/src/store/gameStore';
+import { showAd } from '@/src/services/ads';
 
 const { colors } = GAME_THEME;
 
@@ -89,6 +90,13 @@ export default function ResultsScreen() {
       )
     );
   }, [pulse]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void showAd('between_rounds_interstitial');
+    }, 800);
+    return () => clearTimeout(t);
+  }, []);
 
   const crownStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value }],

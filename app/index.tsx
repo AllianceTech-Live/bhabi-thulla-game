@@ -15,6 +15,7 @@ import Animated, {
   FadeInUp,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AdBanner } from '@/src/components/ads/AdBanner';
 import { WebHome } from '@/src/components/marketing/WebHome';
 import { DeckOptionCard } from '@/src/components/ui/DeckOptionCard';
 import { GAME_ASSETS, ART_DECO_PALETTE } from '@/src/constants/gameAssets';
@@ -197,6 +198,7 @@ export default function HomeScreen() {
         >
           No gambling · No betting · No real money
         </Animated.Text>
+        <AdBanner />
       </View>
     </View>
   );

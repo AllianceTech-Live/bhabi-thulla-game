@@ -7,6 +7,9 @@
       "hosting": {
         "web": [
           "bhabithullagame"
+        ],
+        "web-default": [
+          "bhabithulla-8ec9a"
         ]
       }
     }

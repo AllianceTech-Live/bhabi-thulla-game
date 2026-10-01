@@ -14,6 +14,19 @@
       ],
       "headers": [
         {
+          "source": "/app-ads.txt",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "text/plain; charset=utf-8"
+            },
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=300"
+            }
+          ]
+        },
+        {
           "source": "**/*.@(js|css|png|jpg|jpeg|gif|webp|svg|woff2|wav)",
           "headers": [
             {
@@ -28,6 +41,34 @@
             {
               "key": "Cache-Control",
               "value": "no-cache"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "target": "web-default",
+      "public": "dist",
+      "cleanUrls": true,
+      "trailingSlash": false,
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ],
+      "headers": [
+        {
+          "source": "/app-ads.txt",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "text/plain; charset=utf-8"
+            },
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=300"
             }
           ]
         }
