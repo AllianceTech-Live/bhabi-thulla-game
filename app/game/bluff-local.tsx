@@ -12,6 +12,7 @@ import { GameTable } from '@/src/components/game/GameTable';
 import { DealAnimation } from '@/src/components/game/DealAnimation';
 import type { SeatOrigin } from '@/src/components/game/TrickPlayCard';
 import { PlayerHand } from '@/src/components/game/PlayerHand';
+import { TurnBanner } from '@/src/components/game/TurnBanner';
 import { AppButton } from '@/src/components/ui/AppButton';
 import { GameBackground } from '@/src/components/table';
 import { ART_DECO_PALETTE } from '@/src/constants/gameAssets';
@@ -24,7 +25,7 @@ import { useRoomLayout } from '@/src/hooks/useRoomLayout';
 import { useTableMusic } from '@/src/hooks/useTableMusic';
 import { useTurnTimer } from '@/src/hooks/useTurnTimer';
 import { playSfx, stopMusic } from '@/src/services/audio';
-import { showConfirm } from '@/src/services/dialogs';
+import { confirmQuitGame } from '@/src/services/quitGame';
 import { lockLandscapeOrientation } from '@/src/services/orientation';
 import { triggerHaptic } from '@/src/services/haptics';
 import { useBluffStore } from '@/src/store/bluffStore';
@@ -88,6 +89,7 @@ function toTableState(bluff: BluffState): GameState {
     bhabhiId: bluff.loserId,
     roundNumber: 1,
     handRevealed: true,
+    lastResolvedPlays: null,
     createdAt: bluff.createdAt,
     updatedAt: bluff.updatedAt,
   };
@@ -106,7 +108,6 @@ export default function BluffLocalScreen() {
   const call = useBluffStore((s) => s.call);
   const pass = useBluffStore((s) => s.pass);
   const runAiIfNeeded = useBluffStore((s) => s.runAiIfNeeded);
-  const autoPlayCurrentTurn = useBluffStore((s) => s.autoPlayCurrentTurn);
   const clear = useBluffStore((s) => s.clear);
 
   const [statusFlash, setStatusFlash] = useState('');
@@ -119,9 +120,17 @@ export default function BluffLocalScreen() {
   const eventsLen = useRef(0);
   const dealShownForGame = useRef<string | null>(null);
 
-  const meId = localHumanIds[0] ?? null;
+  // Hot-seat: dock the human whose turn it is when multiple locals
+  const meId =
+    (state?.currentTurnPlayerId &&
+    localHumanIds.includes(state.currentTurnPlayerId)
+      ? state.currentTurnPlayerId
+      : localHumanIds[0]) ?? null;
   const isMyTurn = state?.currentTurnPlayerId === meId;
   const me = state?.players.find((p) => p.id === meId);
+  const turnPlayer = state?.players.find(
+    (p) => p.id === state.currentTurnPlayerId
+  );
   const canInteract =
     Boolean(
       state &&
@@ -133,14 +142,6 @@ export default function BluffLocalScreen() {
         !revealFaceUp &&
         state.phase === 'playing'
     );
-
-  const onTurnTimeout = useCallback(() => {
-    setClaimSheetOpen(false);
-    setSheetRank(null);
-    void triggerHaptic('warning');
-    void playSfx('pass_turn');
-    autoPlayCurrentTurn();
-  }, [autoPlayCurrentTurn]);
 
   const turnKey =
     state &&
@@ -155,8 +156,7 @@ export default function BluffLocalScreen() {
   const { secondsLeft, progress: turnProgress } = useTurnTimer({
     turnKey,
     durationMs: GAME_TIMING.turnTimeoutMs,
-    enableTimeout: canInteract,
-    onTimeout: onTurnTimeout,
+    enableTimeout: false,
   });
 
   useEffect(() => {
@@ -398,11 +398,20 @@ export default function BluffLocalScreen() {
                 styles.claimHud,
                 {
                   left: room.gutter + room.edge + 4,
-                  top: '36%',
+                  top: '28%',
                 },
               ]}
               pointerEvents="none"
             >
+              {turnPlayer && state.phase === 'playing' ? (
+                <View style={styles.turnBannerWrap}>
+                  <TurnBanner
+                    name={turnPlayer.name}
+                    isYou={isMyTurn}
+                    secondsLeft={secondsLeft}
+                  />
+                </View>
+              ) : null}
               <View
                 style={[
                   styles.claimOrb,
@@ -443,7 +452,11 @@ export default function BluffLocalScreen() {
                   </View>
                 ) : (
                   <Text style={styles.claimerIdle}>
-                    {isMyTurn ? 'Your move' : 'Waiting…'}
+                    {isMyTurn
+                      ? 'Your move'
+                      : turnPlayer
+                        ? `${turnPlayer.name}'s turn`
+                        : 'Waiting…'}
                   </Text>
                 )}
               </View>
@@ -639,27 +652,22 @@ export default function BluffLocalScreen() {
                 ? 'CLAIM RANK…'
                 : isMyTurn
                 ? canCall
-                  ? 'CALL · PASS · THROW'
+                  ? 'YOUR TURN · CALL / PASS / THROW'
                   : canPass
-                    ? 'PASS OR THROW'
+                    ? 'YOUR TURN · PASS OR THROW'
                     : 'YOUR TURN · THROW'
-                : 'Waiting…'
+                : turnPlayer
+                  ? `${turnPlayer.name}'s turn`
+                  : 'Waiting…'
           }
           yourTurn={!!isMyTurn && !dealing && !collectTo && !revealFaceUp}
           onExit={() => {
-            showConfirm('Leave game?', 'Progress will be lost.', [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Leave',
-                style: 'destructive',
-                onPress: () => {
-                  clear();
-                  void stopMusic();
-                  void lockLandscapeOrientation();
-                  router.replace('/');
-                },
+            confirmQuitGame({
+              message: 'Progress on this table will be lost.',
+              beforeNavigate: () => {
+                clear();
               },
-            ]);
+            });
           }}
         />
       </View>
@@ -683,8 +691,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     zIndex: 28,
     alignItems: 'center',
-    width: 120,
-    gap: 6,
+    width: 160,
+    gap: 8,
+  },
+  turnBannerWrap: {
+    marginBottom: 4,
+    alignItems: 'center',
   },
   claimOrb: {
     width: 96,
@@ -823,12 +835,12 @@ const styles = StyleSheet.create({
   },
   handDock: {
     position: 'absolute',
-    zIndex: GAME_THEME.layers.playerHand,
+    zIndex: GAME_THEME.layers.gameControls + 20,
     alignItems: 'center',
   },
   actionBar: {
     position: 'absolute',
-    zIndex: 50,
+    zIndex: GAME_THEME.layers.gameControls + 21,
     alignItems: 'stretch',
     gap: 2,
     paddingHorizontal: 6,
@@ -852,7 +864,7 @@ const styles = StyleSheet.create({
   },
   sheetBackdrop: {
     ...StyleSheet.absoluteFill,
-    zIndex: 80,
+    zIndex: GAME_THEME.layers.gameControls + 40,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,

@@ -67,6 +67,9 @@ function cloneState(state: GameState): GameState {
     discarded: [...state.discarded],
     events: [...state.events],
     escapedOrder: [...state.escapedOrder],
+    lastResolvedPlays: state.lastResolvedPlays
+      ? state.lastResolvedPlays.map((p) => ({ ...p, card: { ...p.card } }))
+      : null,
   };
 }
 
@@ -118,6 +121,7 @@ export function createGame(options: CreateGameOptions): GameState {
     escapedOrder: [],
     bhabhiId: null,
     roundNumber: 1,
+    lastResolvedPlays: null,
     handRevealed: mode !== 'offline_pass_play',
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -275,6 +279,10 @@ function finishTrickAfterThulla(
       plays: [],
       leaderId: resolution.collectorId,
     },
+    lastResolvedPlays: state.trick.plays.map((p) => ({
+      ...p,
+      card: { ...p.card },
+    })),
     currentTurnPlayerId: resolution.collectorId,
     updatedAt: now(),
   };
@@ -335,6 +343,10 @@ function finishNormalTrick(
       plays: [],
       leaderId: winnerId,
     },
+    lastResolvedPlays: state.trick.plays.map((p) => ({
+      ...p,
+      card: { ...p.card },
+    })),
     currentTurnPlayerId: winnerId,
     phase: 'playing',
     updatedAt: now(),
@@ -462,6 +474,7 @@ export function playCard(
 
   next = {
     ...next,
+    lastResolvedPlays: null,
     trick: {
       leadSuit,
       plays: [...next.trick.plays, play],
@@ -490,7 +503,11 @@ export function playCard(
         })
       );
     }
-    return { success: true, state: next, events };
+    return {
+      success: true,
+      state: { ...next, events: [...next.events, ...events] },
+      events,
+    };
   }
 
   // Check if all active players have played
@@ -564,7 +581,11 @@ export function playCard(
     );
   }
 
-  return { success: true, state: next, events };
+  return {
+    success: true,
+    state: { ...next, events: [...next.events, ...events] },
+    events,
+  };
 }
 
 /** Reveal hand in pass-and-play mode. */

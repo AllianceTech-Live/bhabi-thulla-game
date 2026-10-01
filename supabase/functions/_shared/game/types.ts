@@ -91,6 +91,12 @@ export interface GameState {
   roundNumber: number;
   /** Pass-and-play: hide hand until player confirms */
   handRevealed: boolean;
+  /**
+   * Completed trick pile kept for UI until the next card is led.
+   * Critical for 2-player games where the trick clears in the same update
+   * as the second play — without this the table never shows both cards.
+   */
+  lastResolvedPlays: TrickPlay[] | null;
   createdAt: number;
   updatedAt: number;
 }

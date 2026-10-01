@@ -121,13 +121,18 @@ export function PlayerHand({
     { minHeight: handHeight, paddingTop: 0, paddingBottom: DROP_ROOM },
   ];
 
-  // Web ScrollView often swallows the 2nd click — use a plain row instead.
-  if (Platform.OS === 'web') {
+  // Prefer a plain row when the fan fits — ScrollView often eats taps on Android.
+  const step = cardW + overlapMargin;
+  const fanWidth =
+    hand.length <= 1 ? cardW + 16 : cardW + (hand.length - 1) * step + 16;
+  const usePlainRow = Platform.OS !== 'web' && fanWidth <= long * 0.78;
+
+  if (Platform.OS === 'web' || usePlainRow) {
     return (
       <View
         style={[
           styles.webRow,
-          { height: handHeight, maxWidth: long * 0.72 },
+          { height: handHeight, maxWidth: long * 0.78 },
         ]}
       >
         <View style={rowStyle}>{cards}</View>
@@ -143,6 +148,7 @@ export function PlayerHand({
       contentContainerStyle={rowStyle}
       nestedScrollEnabled
       keyboardShouldPersistTaps="handled"
+      scrollEventThrottle={16}
     >
       {cards}
     </ScrollView>

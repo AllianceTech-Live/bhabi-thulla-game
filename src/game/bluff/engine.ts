@@ -150,6 +150,9 @@ export function playBluffCards(
   if (cardIds.length < 1 || cardIds.length > 4) {
     return { success: false, error: 'Play 1 to 4 cards', state: next };
   }
+  if (new Set(cardIds).size !== cardIds.length) {
+    return { success: false, error: 'Duplicate cards', state: next };
+  }
   if (!RANKS.includes(claimedRank)) {
     return { success: false, error: 'Invalid rank', state: next };
   }
@@ -222,7 +225,10 @@ export function callBluff(
   if (next.lastPlay.playerId === callerId) {
     return { success: false, error: 'Cannot call your own play', state: next };
   }
-  // Anyone still in may call (classic table shout) — prefer current turn
+  // Call is on your turn only (matches table UI)
+  if (next.currentTurnPlayerId !== callerId) {
+    return { success: false, error: 'Not your turn', state: next };
+  }
   const caller = next.players.find((p) => p.id === callerId);
   if (!caller || caller.finishOrder != null) {
     return { success: false, error: 'Invalid caller', state: next };
@@ -242,6 +248,15 @@ export function callBluff(
   }
 
   const taker = next.players.find((p) => p.id === takerId)!;
+  // If an escaped/finished player is caught and takes the pile, re-enter them
+  if (taker.finishOrder != null) {
+    taker.finishOrder = null;
+    if (next.winnerId === takerId) next.winnerId = null;
+    if ((next.phase as BluffPhase) === 'game_complete') {
+      next.phase = 'playing';
+      next.loserId = null;
+    }
+  }
   taker.hand = sortHandByRank([...taker.hand, ...pileCards]);
   next.pile = [];
   next.lastPlay = null;
@@ -263,7 +278,6 @@ export function callBluff(
 
   // Taker leads next (free claim)
   next.currentTurnPlayerId = takerId;
-  // If taker already finished somehow, skip
   if (taker.hand.length === 0) {
     checkFinishes(next, takerId);
     const nxt = nextActive(next, takerId);
@@ -305,6 +319,20 @@ export function passBluffTurn(
     return { success: false, error: 'No one to pass to', state: next };
   }
 
+  // Full circle back to the claimer — tuck the pile, free lead
+  if (next.lastPlay && nxt.id === next.lastPlay.playerId) {
+    next.pile = [];
+    next.lastPlay = null;
+    next.requiredRank = null;
+    next.currentTurnPlayerId = nxt.id;
+    pushEvent(next, 'bluff_pass', {
+      playerId,
+      nextId: nxt.id,
+      pileCleared: true,
+    });
+    return { success: true, state: next };
+  }
+
   next.currentTurnPlayerId = nxt.id;
   pushEvent(next, 'bluff_pass', { playerId, nextId: nxt.id });
   return { success: true, state: next };
@@ -343,6 +371,12 @@ export function sanitizeBluffState(
       })),
     };
   }
+  // Never leak true pile identities to the client
+  next.pile = next.pile.map((_, i) => ({
+    id: `pile-slot-${i}`,
+    suit: 'spades' as const,
+    rank: (next.requiredRank ?? 'A') as Rank,
+  }));
   return next;
 }
 

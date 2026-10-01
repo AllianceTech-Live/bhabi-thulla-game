@@ -1,4 +1,11 @@
-import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
+import { Asset } from 'expo-asset';
+import {
+  createAudioPlayer,
+  setAudioModeAsync,
+  setIsAudioActiveAsync,
+  type AudioPlayer,
+} from 'expo-audio';
+import { AppState, Platform } from 'react-native';
 import { useSettingsStore } from '../store/settingsStore';
 
 /**
@@ -55,6 +62,7 @@ const MUSIC_SOURCE = require('../../assets/sounds/table-ambience.wav');
 const MUSIC_VOLUME = 0.16;
 /** Overlapping deal flicks need more than one player. */
 const DEAL_POOL_SIZE = 4;
+const SFX_VOLUME = 1;
 
 const players: Partial<Record<SfxName, AudioPlayer>> = {};
 let dealPool: AudioPlayer[] = [];
@@ -62,6 +70,29 @@ let dealPoolIndex = 0;
 let musicPlayer: AudioPlayer | null = null;
 let boot: Promise<void> | null = null;
 let musicWanted = false;
+let appStateBound = false;
+
+/** Android ExoPlayer needs a local file URI; packager asset:// URLs often stay silent. */
+async function resolveLocalUri(moduleId: number): Promise<string> {
+  const asset = Asset.fromModule(moduleId);
+  await asset.downloadAsync();
+  const uri = asset.localUri ?? asset.uri;
+  if (!uri) {
+    throw new Error('Audio asset missing URI');
+  }
+  return uri;
+}
+
+async function makePlayer(moduleId: number): Promise<AudioPlayer> {
+  const uri = await resolveLocalUri(moduleId);
+  return createAudioPlayer(
+    { uri },
+    {
+      keepAudioSessionActive: true,
+      updateInterval: 1000,
+    }
+  );
+}
 
 function clearDealPool() {
   dealPool.forEach((p) => {
@@ -75,33 +106,71 @@ function clearDealPool() {
   dealPoolIndex = 0;
 }
 
+async function applyAudioMode(): Promise<void> {
+  await setIsAudioActiveAsync(true);
+  // Android: duckOthers requests audio focus so media routes to the speaker.
+  // mixWithOthers skips focus and is often silent when another app holds the stream.
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    shouldPlayInBackground: false,
+    shouldRouteThroughEarpiece: false,
+    interruptionMode: Platform.OS === 'android' ? 'duckOthers' : 'mixWithOthers',
+  });
+}
+
+function bindAppStateOnce() {
+  if (appStateBound) return;
+  appStateBound = true;
+  AppState.addEventListener('change', (next) => {
+    if (next !== 'active') return;
+    void (async () => {
+      try {
+        await applyAudioMode();
+      } catch {
+        // ignore
+      }
+      if (musicWanted) {
+        void playMusic(true);
+      }
+    })();
+  });
+}
+
 export function initAudio(): Promise<void> {
   if (!boot) {
     boot = (async () => {
+      bindAppStateOnce();
       try {
-        await setAudioModeAsync({
-          playsInSilentMode: true,
-          shouldPlayInBackground: false,
-          interruptionMode: 'mixWithOthers',
-        });
-        (Object.keys(SOURCES) as SfxName[]).forEach((name) => {
-          if (name === 'card_deal') return;
-          const existing = players[name];
-          if (existing) {
-            try {
-              existing.remove();
-            } catch {
-              // Old player may already be gone.
+        await applyAudioMode();
+      } catch {
+        // Mode can fail on web / old clients — still try to create players.
+      }
+      try {
+        const names = (Object.keys(SOURCES) as SfxName[]).filter((n) => n !== 'card_deal');
+        await Promise.all(
+          names.map(async (name) => {
+            const existing = players[name];
+            if (existing) {
+              try {
+                existing.remove();
+              } catch {
+                // Old player may already be gone.
+              }
             }
-          }
-          players[name] = createAudioPlayer(SOURCES[name]);
-        });
+            const p = await makePlayer(SOURCES[name]);
+            p.volume = SFX_VOLUME;
+            players[name] = p;
+          })
+        );
         clearDealPool();
-        for (let i = 0; i < DEAL_POOL_SIZE; i++) {
-          const p = createAudioPlayer(SOURCES.card_deal);
-          p.volume = 0.95;
-          dealPool.push(p);
-        }
+        const dealPlayers = await Promise.all(
+          Array.from({ length: DEAL_POOL_SIZE }, async () => {
+            const p = await makePlayer(SOURCES.card_deal);
+            p.volume = 0.95;
+            return p;
+          })
+        );
+        dealPool = dealPlayers;
         if (musicPlayer) {
           try {
             musicPlayer.remove();
@@ -109,7 +178,7 @@ export function initAudio(): Promise<void> {
             // ignore
           }
         }
-        musicPlayer = createAudioPlayer(MUSIC_SOURCE);
+        musicPlayer = await makePlayer(MUSIC_SOURCE);
         musicPlayer.loop = true;
         musicPlayer.volume = MUSIC_VOLUME;
       } catch {
@@ -141,6 +210,33 @@ export function resetAudio(): void {
   boot = null;
 }
 
+async function firePlayer(player: AudioPlayer): Promise<void> {
+  try {
+    if (!(player.volume > 0)) {
+      player.volume = SFX_VOLUME;
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if (player.playing) {
+      player.pause();
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    await player.seekTo(0);
+  } catch {
+    // Not ready yet — still attempt play.
+  }
+  try {
+    player.play();
+  } catch {
+    // Ignore a single failed playback.
+  }
+}
+
 export async function playSfx(name: SfxName): Promise<void> {
   if (!useSettingsStore.getState().soundEnabled) return;
   await initAudio();
@@ -149,19 +245,16 @@ export async function playSfx(name: SfxName): Promise<void> {
       if (dealPool.length === 0) return;
       const player = dealPool[dealPoolIndex % dealPool.length]!;
       dealPoolIndex = (dealPoolIndex + 1) % dealPool.length;
-      void player.seekTo(0).then(() => {
-        try {
-          player.play();
-        } catch {
-          // ignore
-        }
-      });
+      void firePlayer(player);
       return;
     }
-    const player = players[name];
-    if (!player) return;
-    await player.seekTo(0);
-    player.play();
+    let player = players[name];
+    if (!player) {
+      player = await makePlayer(SOURCES[name]);
+      player.volume = SFX_VOLUME;
+      players[name] = player;
+    }
+    await firePlayer(player);
   } catch {
     // Ignore a single failed playback.
   }

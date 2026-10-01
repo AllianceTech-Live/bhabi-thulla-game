@@ -37,29 +37,43 @@ function CardBackFan({
   if (n === 0) return null;
   const { w, h } = CARD_STYLE.sizes.mini;
   const mid = (n - 1) / 2;
+  const overlap = toward === 'left' || toward === 'right' ? 10 : 12;
+  const step = Math.max(6, w - overlap);
+  const fanWidth = n <= 1 ? w : w + (n - 1) * step;
 
   return (
     <View
       style={[
         styles.fan,
         (toward === 'left' || toward === 'right') && styles.fanHorizontal,
+        { width: fanWidth, height: h + 4 },
       ]}
     >
-      {Array.from({ length: n }, (_, i) => (
-        <View
-          key={i}
-          style={[
-            styles.fanCard,
-            {
-              marginLeft:
-                toward === 'down' || toward === 'up' ? (i - mid) * 9 : i * 5,
-              zIndex: i,
-            },
-          ]}
-        >
-          <CardBackView width={w} height={h} />
-        </View>
-      ))}
+      {Array.from({ length: n }, (_, i) => {
+        const offset = i - mid;
+        return (
+          <View
+            key={i}
+            style={[
+              styles.fanCard,
+              {
+                left: i * step,
+                zIndex: i,
+                transform: [
+                  {
+                    rotate:
+                      toward === 'down' || toward === 'up'
+                        ? `${offset * 6}deg`
+                        : `${offset * 4}deg`,
+                  },
+                ],
+              },
+            ]}
+          >
+            <CardBackView width={w} height={h} />
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -173,6 +187,12 @@ export function PlayerSeat({
             )}
           </Animated.View>
 
+          {isCurrent && !escaped && !waiting ? (
+            <View style={styles.turnBadge}>
+              <Text style={styles.turnBadgeText}>TURN</Text>
+            </View>
+          ) : null}
+
           {showCards && position === 'bottom' ? (
             <View style={styles.fanBelow}>
               <CardBackFan toward="up" count={count} />
@@ -186,7 +206,10 @@ export function PlayerSeat({
           {emptySeat ? 'Waiting' : displayName}
         </Text>
       ) : (
-        <Text style={styles.nameplate} numberOfLines={1}>
+        <Text
+          style={[styles.nameplate, isCurrent && !escaped && styles.nameplateActive]}
+          numberOfLines={1}
+        >
           {displayName}
         </Text>
       )}
@@ -258,15 +281,12 @@ const styles = StyleSheet.create({
     marginTop: -1,
   },
   fan: {
-    width: 52,
-    height: 40,
-    flexDirection: 'row',
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
   },
   fanHorizontal: {
-    width: 56,
-    height: 44,
+    minHeight: 44,
   },
   fanAbove: { marginBottom: -6 },
   fanBelow: { marginTop: -6 },
@@ -280,6 +300,26 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     maxWidth: 88,
     textAlign: 'center',
+  },
+  nameplateActive: {
+    color: ART_DECO_PALETTE.ivory,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  turnBadge: {
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: ART_DECO_PALETTE.gold,
+    borderWidth: 1,
+    borderColor: ART_DECO_PALETTE.goldLight,
+  },
+  turnBadgeText: {
+    color: '#1A120C',
+    fontWeight: '900',
+    fontSize: 9,
+    letterSpacing: 0.8,
   },
   statusText: {
     marginTop: 3,

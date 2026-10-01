@@ -6,6 +6,7 @@ import {
   Title,
 } from '@/src/components/ui/AppButton';
 import { COLORS } from '@/src/constants/theme';
+import { navigateAfterQuit } from '@/src/services/quitGame';
 
 export default function PauseScreen() {
   return (
@@ -20,9 +21,9 @@ export default function PauseScreen() {
           onPress={() => router.push('/rules')}
         />
         <AppButton
-          title="Quit to Home"
+          title="Quit game"
           variant="secondary"
-          onPress={() => router.replace('/')}
+          onPress={() => navigateAfterQuit('/')}
         />
       </View>
     </Screen>

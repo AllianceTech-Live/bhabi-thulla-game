@@ -1,14 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Platform } from 'react-native';
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  withTiming,
 } from 'react-native-reanimated';
 import type { Card } from '../../game/types';
-import { GAME_TIMING } from '../../constants/timing';
 import { triggerHaptic } from '../../services/haptics';
 import { CARD_STYLE } from './cardStyle';
 import { CardFace } from './CardFace';
@@ -61,19 +58,14 @@ export function PlayingCard({
   const { w, h } = sizeFor(compact, mini, width, height);
 
   useEffect(() => {
-    // Web: never slide the card out from under the pointer. One tap throws.
-    if (Platform.OS === 'web') {
-      lift.value = drop ? 12 : 0;
-      return;
-    }
     if (selected) {
-      lift.value = withSpring(-18, { damping: 14, stiffness: 180 });
+      lift.value = withSpring(-22, { damping: 14, stiffness: 180 });
     } else if (drop) {
       lift.value = withSpring(12, { damping: 16, stiffness: 180 });
-    } else if (!liftOnPress) {
+    } else {
       lift.value = withSpring(0, { damping: 14, stiffness: 180 });
     }
-  }, [selected, drop, lift, liftOnPress]);
+  }, [selected, drop, lift]);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: lift.value }],
@@ -81,15 +73,10 @@ export function PlayingCard({
 
   const handlePress = () => {
     const now = Date.now();
-    if (now - pressedAt.current < 400) return;
+    // Short guard against accidental double-fire from pressIn+press
+    if (now - pressedAt.current < 120) return;
     pressedAt.current = now;
     void triggerHaptic('selection');
-    if (liftOnPress && Platform.OS !== 'web') {
-      lift.value = withTiming(-26, {
-        duration: GAME_TIMING.cardLiftMs,
-        easing: Easing.out(Easing.cubic),
-      });
-    }
     onPress?.(card);
   };
 
@@ -103,7 +90,6 @@ export function PlayingCard({
     <Pressable
       disabled={disabled || !onPress}
       onPress={handlePress}
-      onPressIn={Platform.OS === 'web' ? handlePress : undefined}
       hitSlop={8}
       style={[
         styles.shadow,

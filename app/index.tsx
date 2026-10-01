@@ -1,7 +1,6 @@
 import { router } from 'expo-router';
 import {
   Image,
-  ImageBackground,
   Platform,
   Pressable,
   StyleSheet,
@@ -9,6 +8,12 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebHome } from '@/src/components/marketing/WebHome';
 import { DeckOptionCard } from '@/src/components/ui/DeckOptionCard';
@@ -66,24 +71,24 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.root}>
-      <ImageBackground
-        source={cachedAssetSource(GAME_ASSETS.environment)}
+      <LinearGradient
+        colors={['#061510', '#04120E', '#030A08', '#020605']}
+        locations={[0, 0.35, 0.75, 1]}
         style={StyleSheet.absoluteFill}
-        resizeMode="cover"
-      >
-        <LinearGradient
-          colors={[
-            'rgba(4,21,16,0.35)',
-            'rgba(4,21,16,0.15)',
-            'rgba(4,21,16,0.72)',
-            'rgba(4,12,10,0.92)',
-          ]}
-          locations={[0, 0.35, 0.72, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      </ImageBackground>
+      />
+      <LinearGradient
+        colors={[
+          'rgba(18,100,70,0.18)',
+          'transparent',
+          'rgba(4,12,10,0.55)',
+        ]}
+        locations={[0, 0.45, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
 
-      <View
+      <Animated.View
+        entering={FadeIn.duration(420)}
         style={[
           styles.topBar,
           {
@@ -130,37 +135,23 @@ export default function HomeScreen() {
             {displayName.trim() || 'You'}
           </Text>
         </Pressable>
-      </View>
+      </Animated.View>
 
-      <View
+      <Animated.View
+        entering={FadeInDown.duration(480).easing(Easing.out(Easing.cubic))}
         style={[
-          styles.hero,
+          styles.heroTitleBlock,
           {
             paddingLeft: Math.max(insets.left, layout.pagePad),
             paddingRight: Math.max(insets.right, layout.pagePad),
           },
         ]}
       >
-        <View style={styles.heroStage}>
-          <Image
-            source={cachedAssetSource(GAME_ASSETS.table)}
-            style={styles.heroTable}
-            resizeMode="contain"
-          />
-          <LinearGradient
-            colors={['transparent', 'rgba(4,12,10,0.55)', 'rgba(4,12,10,0.92)']}
-            style={styles.heroFade}
-            pointerEvents="none"
-          />
-          <View style={styles.brandBlock} pointerEvents="none">
-            <Text style={styles.suits}>♠  ♥  ♦  ♣</Text>
-            <Text style={[styles.brand, { fontSize: layout.titleSize + 4 }]}>
-              {APP_NAME}
-            </Text>
-            <Text style={styles.tagline}>Choose a game · same table · no stakes</Text>
-          </View>
-        </View>
-      </View>
+        <Text style={styles.suits}>♠  ♥  ♦  ♣</Text>
+        <Text style={[styles.heroTitle, { fontSize: layout.titleSize + 8 }]}>
+          {APP_NAME}
+        </Text>
+      </Animated.View>
 
       <View
         style={[
@@ -172,24 +163,40 @@ export default function HomeScreen() {
           },
         ]}
       >
-        <Text style={styles.sectionLabel}>Select game</Text>
+        <Animated.Text
+          entering={FadeIn.delay(280).duration(360)}
+          style={styles.sectionLabel}
+        >
+          Select game
+        </Animated.Text>
         <View style={styles.cardRow}>
           {CATALOG_GAMES.map((g, i) => (
-            <DeckOptionCard
+            <Animated.View
               key={g.id}
-              label={g.title}
-              sub={g.blurb}
-              glyph={g.glyph}
-              image={g.image}
-              primary={i === 0}
-              onPress={() => openGame(g.id)}
-              style={styles.gameCard}
-            />
+              entering={FadeInUp.delay(340 + i * 120)
+                .duration(480)
+                .easing(Easing.out(Easing.cubic))}
+              style={styles.gameCardSlot}
+            >
+              <DeckOptionCard
+                label={g.title}
+                sub={g.blurb}
+                glyph={g.glyph}
+                peekCards={g.peekCards}
+                primary={i === 0}
+                prominent
+                onPress={() => openGame(g.id)}
+                style={styles.gameCard}
+              />
+            </Animated.View>
           ))}
         </View>
-        <Text style={styles.disclaimer}>
+        <Animated.Text
+          entering={FadeIn.delay(560).duration(360)}
+          style={styles.disclaimer}
+        >
           No gambling · No betting · No real money
-        </Text>
+        </Animated.Text>
       </View>
     </View>
   );
@@ -198,7 +205,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: ART_DECO_PALETTE.room,
+    backgroundColor: '#030A08',
   },
   topBar: {
     flexDirection: 'row',
@@ -249,76 +256,58 @@ const styles = StyleSheet.create({
     fontSize: 13,
     flexShrink: 1,
   },
-  hero: {
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: 0,
-  },
-  heroStage: {
-    flex: 1,
+  heroTitleBlock: {
     alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  heroTable: {
-    width: '92%',
-    height: '78%',
-    opacity: 0.95,
-  },
-  heroFade: {
-    ...StyleSheet.absoluteFill,
-  },
-  brandBlock: {
-    position: 'absolute',
-    bottom: 8,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
   suits: {
     color: ART_DECO_PALETTE.goldLight,
     letterSpacing: 8,
     fontSize: 14,
-    opacity: 0.85,
-    marginBottom: 4,
-  },
-  brand: {
-    color: ART_DECO_PALETTE.gold,
-    fontWeight: '900',
-    letterSpacing: 1.2,
+    opacity: 0.9,
+    marginBottom: 6,
     textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.65)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
   },
-  tagline: {
-    marginTop: 4,
-    color: 'rgba(247,241,227,0.78)',
-    fontSize: 12,
+  heroTitle: {
+    color: ART_DECO_PALETTE.goldLight,
+    fontWeight: '900',
+    letterSpacing: 1.4,
     textAlign: 'center',
   },
   tabBarWrap: {
+    flex: 1,
     zIndex: 3,
+    marginTop: 6,
+    minHeight: 220,
+    justifyContent: 'flex-end',
   },
   sectionLabel: {
     color: ART_DECO_PALETTE.goldLight,
     fontWeight: '800',
     fontSize: 12,
-    letterSpacing: 1,
+    letterSpacing: 1.6,
     textTransform: 'uppercase',
     textAlign: 'center',
-    marginBottom: 8,
-    opacity: 0.9,
+    marginBottom: 12,
   },
   cardRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    justifyContent: 'center',
     gap: 12,
+    flex: 1,
+    maxHeight: 210,
+  },
+  gameCardSlot: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: '50%',
   },
   gameCard: {
-    maxHeight: 168,
-    minHeight: 128,
+    flex: 1,
+    width: '100%',
+    minHeight: 178,
   },
   disclaimer: {
     textAlign: 'center',

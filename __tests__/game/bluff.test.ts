@@ -78,6 +78,7 @@ describe('Bluff engine', () => {
       playerConfigs: [
         { id: 'a', name: 'A', type: 'human' },
         { id: 'b', name: 'B', type: 'human' },
+        { id: 'c', name: 'C', type: 'human' },
       ],
     });
     const card = state.players[0]!.hand[0]!;
@@ -85,7 +86,24 @@ describe('Bluff engine', () => {
     expect(state.currentTurnPlayerId).toBe('b');
     const passed = passBluffTurn(state, 'b');
     expect(passed.success).toBe(true);
-    expect(passed.state.currentTurnPlayerId).toBe('a');
+    expect(passed.state.currentTurnPlayerId).toBe('c');
     expect(passed.state.pile.length).toBe(1);
+  });
+
+  it('clears the pile when pass circles back to the claimer (2p)', () => {
+    let state = createBluffGame({
+      randomFn: seededRandom(3),
+      playerConfigs: [
+        { id: 'a', name: 'A', type: 'human' },
+        { id: 'b', name: 'B', type: 'human' },
+      ],
+    });
+    const card = state.players[0]!.hand[0]!;
+    state = playBluffCards(state, 'a', [card.id], card.rank).state;
+    const passed = passBluffTurn(state, 'b');
+    expect(passed.success).toBe(true);
+    expect(passed.state.currentTurnPlayerId).toBe('a');
+    expect(passed.state.pile.length).toBe(0);
+    expect(passed.state.lastPlay).toBeNull();
   });
 });

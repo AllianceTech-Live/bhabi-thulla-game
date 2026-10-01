@@ -55,6 +55,7 @@ export function buildLobbyTableState(
     bhabhiId: null,
     roundNumber: 1,
     handRevealed: true,
+    lastResolvedPlays: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

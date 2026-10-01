@@ -5,6 +5,7 @@ import {
   Subtitle,
   Title,
 } from '@/src/components/ui/AppButton';
+import { CARD_FACES } from '@/src/components/cards/cardFaces';
 import { DeckOptionCard } from '@/src/components/ui/DeckOptionCard';
 import { GAME_ASSETS, ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 
@@ -21,6 +22,11 @@ export default function ModeScreen() {
           sub="Local table"
           glyph="Ⅳ"
           image={GAME_ASSETS.playerFrame}
+          peekCards={[
+            CARD_FACES.hearts['7'],
+            CARD_FACES.spades['7'],
+            CARD_FACES.diamonds['7'],
+          ]}
           primary
           onPress={() =>
             router.push({
@@ -28,18 +34,25 @@ export default function ModeScreen() {
               params: { mode: 'pass' },
             })
           }
+          style={styles.deckTile}
         />
         <DeckOptionCard
           label="Play vs AI"
           sub="Solo practice"
           glyph="♠A"
           image={GAME_ASSETS.cardBack}
+          peekCards={[
+            CARD_FACES.clubs.A,
+            CARD_FACES.hearts.J,
+            CARD_FACES.spades['10'],
+          ]}
           onPress={() =>
             router.push({
               pathname: '/offline/setup',
               params: { mode: 'ai' },
             })
           }
+          style={styles.deckTile}
         />
       </View>
     </Screen>
@@ -58,10 +71,16 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    justifyContent: 'center',
     gap: 12,
     width: '100%',
     marginTop: 18,
     maxWidth: 420,
     alignSelf: 'center',
+  },
+  deckTile: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: '50%',
   },
 });

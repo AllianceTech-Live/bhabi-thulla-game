@@ -6,18 +6,21 @@ import {
   View,
 } from 'react-native';
 import { showAlert } from '@/src/services/dialogs';
+import { confirmQuitGame } from '@/src/services/quitGame';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { GameChrome } from '@/src/components/game/GameChrome';
+import { GameOverScreen } from '@/src/components/game/GameOverScreen';
 import { GameTable } from '@/src/components/game/GameTable';
 import { DealAnimation } from '@/src/components/game/DealAnimation';
 import type { SeatOrigin } from '@/src/components/game/TrickPlayCard';
 import { PlayerHand } from '@/src/components/game/PlayerHand';
+import { TurnBanner } from '@/src/components/game/TurnBanner';
 import { AppButton } from '@/src/components/ui/AppButton';
 import { ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import { GAME_THEME } from '@/src/constants/gameTheme';
 import { GAME_TIMING } from '@/src/constants/timing';
-import { decideBluffMove, type BluffState } from '@/src/game/bluff';
+import { type BluffState } from '@/src/game/bluff';
 import type { Card, GameState, Rank, TrickPlay } from '@/src/game/types';
 import { RANKS } from '@/src/game/types';
 import { useRoomLayout } from '@/src/hooks/useRoomLayout';
@@ -92,6 +95,7 @@ function toTableState(bluff: BluffState): GameState {
     bhabhiId: bluff.loserId,
     roundNumber: 1,
     handRevealed: true,
+    lastResolvedPlays: null,
     createdAt: bluff.createdAt,
     updatedAt: bluff.updatedAt,
   };
@@ -103,6 +107,8 @@ type Props = {
   roomCode: string;
   initialState: BluffState;
   onState: (state: BluffState) => void;
+  /** Where HOME sends everyone after the win popup (online menu / quick match). */
+  homeHref?: '/online' | '/online/match';
 };
 
 /**
@@ -114,6 +120,7 @@ export function BluffOnlinePlay({
   roomCode,
   initialState,
   onState,
+  homeHref = '/online',
 }: Props) {
   const insets = useSafeAreaInsets();
   const room = useRoomLayout();
@@ -171,28 +178,40 @@ export function BluffOnlinePlay({
   useEffect(() => {
     if (dealing) return;
     if (state.events.length <= eventsLen.current) return;
+    const from = eventsLen.current;
     eventsLen.current = state.events.length;
-    const last = state.events[state.events.length - 1];
-    if (!last) return;
+    const fresh = state.events.slice(from);
+    if (fresh.length === 0) return;
 
     const timers: ReturnType<typeof setTimeout>[] = [];
+    // Prefer the newest call for reveal animation; still flash earlier plays
+    const lastCall = [...fresh].reverse().find((e) => e.type === 'bluff_call');
+    const last = fresh[fresh.length - 1]!;
+
     timers.push(
       setTimeout(() => {
-        if (last.type === 'bluff_play') {
-          setStatusFlash(
-            `Claimed ${String(last.payload?.claimedRank)} ×${String(last.payload?.count)}`
-          );
-          void playSfx('card_throw');
-        } else if (last.type === 'bluff_pass') {
-          setStatusFlash('Passed');
-          void playSfx('pass_turn');
-        } else if (last.type === 'bluff_call') {
-          const honest = Boolean(last.payload?.honest);
-          const takerId = String(last.payload?.takerId ?? '');
-          const liarId = String(last.payload?.liarId ?? '');
-          const claimedRank = String(last.payload?.claimedRank ?? 'A') as Rank;
+        for (const ev of fresh) {
+          if (ev.type === 'bluff_play') {
+            setStatusFlash(
+              `Claimed ${String(ev.payload?.claimedRank)} ×${String(ev.payload?.count)}`
+            );
+            void playSfx('card_throw');
+          } else if (ev.type === 'bluff_pass') {
+            setStatusFlash(
+              ev.payload?.pileCleared ? 'All passed — free lead' : 'Passed'
+            );
+            void playSfx('pass_turn');
+          }
+        }
+
+        const callEv = lastCall ?? (last.type === 'bluff_call' ? last : null);
+        if (callEv) {
+          const honest = Boolean(callEv.payload?.honest);
+          const takerId = String(callEv.payload?.takerId ?? '');
+          const liarId = String(callEv.payload?.liarId ?? '');
+          const claimedRank = String(callEv.payload?.claimedRank ?? 'A') as Rank;
           const raw =
-            (last.payload?.revealedCards as
+            (callEv.payload?.revealedCards as
               | { id: string; suit: string; rank: string }[]
               | undefined) ?? [];
           setStatusFlash(
@@ -243,10 +262,22 @@ export function BluffOnlinePlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.events.length, dealing]);
 
+  // Never leave collect/reveal locked forever
+  useEffect(() => {
+    if (!collectTo && !revealFaceUp) return;
+    const t = setTimeout(() => {
+      setCollectTo(null);
+      setHeldPlays(null);
+      setRevealFaceUp(false);
+    }, GAME_TIMING.thullaHoldMs + 1200);
+    return () => clearTimeout(t);
+  }, [collectTo, revealFaceUp]);
+
   const tableState = useMemo(() => toTableState(state), [state]);
   const visiblePlays = heldPlays ?? tableState.trick.plays;
   const me = state.players.find((p) => p.id === userId);
   const isMyTurn = state.currentTurnPlayerId === userId;
+  const turnPlayer = state.players.find((p) => p.id === state.currentTurnPlayerId);
   const freeClaim = !state.requiredRank;
   const canCall = Boolean(
     !dealing && isMyTurn && me && state.lastPlay && state.lastPlay.playerId !== userId
@@ -265,48 +296,6 @@ export function BluffOnlinePlay({
     !submitting &&
     state.phase === 'playing';
 
-  const onTurnTimeout = useCallback(() => {
-    if (submitting) return;
-    setClaimSheetOpen(false);
-    setSheetRank(null);
-    void triggerHaptic('warning');
-    void playSfx('pass_turn');
-    const decision = decideBluffMove(state, userId);
-    if (!decision) return;
-    setSubmitting(true);
-    const payload =
-      decision.action === 'call'
-        ? { action: 'call' as const }
-        : {
-            action: 'play' as const,
-            cardIds: decision.cardIds,
-            claimedRank: decision.claimedRank,
-          };
-    void submitBluffMove(gameId, payload)
-      .then((next) => {
-        setSelectedCardIds([]);
-        applyState(next);
-      })
-      .catch(async (e) => {
-        const msg = errorMessage(e);
-        void playSfx('error');
-        // Timeout auto-move often races — refresh instead of a blocking alert.
-        try {
-          const snap = await fetchOnlineSnapshot(gameId);
-          if (snap?.gameType === 'bluff' && snap.state) {
-            applyState(snap.state as BluffState);
-            return;
-          }
-        } catch {
-          /* fall through */
-        }
-        if (!isOnlineRaceError(msg)) {
-          setLastError(msg);
-        }
-      })
-      .finally(() => setSubmitting(false));
-  }, [submitting, state, userId, gameId, applyState]);
-
   const turnKey =
     !dealing &&
     state.phase === 'playing' &&
@@ -319,8 +308,7 @@ export function BluffOnlinePlay({
   const { secondsLeft, progress: turnProgress } = useTurnTimer({
     turnKey,
     durationMs: GAME_TIMING.turnTimeoutMs,
-    enableTimeout: canInteract,
-    onTimeout: onTurnTimeout,
+    enableTimeout: false,
   });
 
   const toggleCard = (cardId: string) => {
@@ -433,10 +421,19 @@ export function BluffOnlinePlay({
         <View
           style={[
             styles.claimHud,
-            { left: room.gutter + room.edge + 4, top: '36%' },
+            { left: room.gutter + room.edge + 4, top: '28%' },
           ]}
           pointerEvents="none"
         >
+          {turnPlayer && state.phase === 'playing' ? (
+            <View style={styles.turnBannerWrap}>
+              <TurnBanner
+                name={turnPlayer.name}
+                isYou={isMyTurn}
+                secondsLeft={secondsLeft}
+              />
+            </View>
+          ) : null}
           <View
             style={[
               styles.claimOrb,
@@ -470,7 +467,11 @@ export function BluffOnlinePlay({
               </View>
             ) : (
               <Text style={styles.claimerIdle}>
-                {isMyTurn ? 'Your move' : 'Waiting…'}
+                {isMyTurn
+                  ? 'Your move'
+                  : turnPlayer
+                    ? `${turnPlayer.name}'s turn`
+                    : 'Waiting…'}
               </Text>
             )}
           </View>
@@ -671,21 +672,51 @@ export function BluffOnlinePlay({
       ) : null}
 
       {state.phase === 'game_complete' ? (
-        <View style={styles.over}>
-          <Text style={styles.overTitle}>
-            {state.winnerId === userId ? 'You escaped!' : 'Game over'}
-          </Text>
-          <AppButton
-            title="Leave"
-            onPress={() => {
-              void leaveRoom(gameId).finally(() => {
-                void stopMusic();
-                void lockLandscapeOrientation();
-                router.replace('/online');
-              });
-            }}
-          />
-        </View>
+        <GameOverScreen
+          outcome={
+            state.winnerId === userId
+              ? 'win'
+              : state.loserId === userId
+                ? 'lose'
+                : 'over'
+          }
+          title={
+            state.winnerId === userId
+              ? 'YOU WIN!'
+              : state.loserId === userId
+                ? "YOU'RE BHABI"
+                : 'ROUND OVER'
+          }
+          subtitle={
+            state.winnerId === userId
+              ? 'First to empty your hand'
+              : state.loserId === userId
+                ? 'Caught holding the bag'
+                : (() => {
+                    const winner = state.players.find(
+                      (p) => p.id === state.winnerId
+                    );
+                    return winner ? `${winner.name} wins` : undefined;
+                  })()
+          }
+          detail={
+            state.loserId
+              ? (() => {
+                  const loser = state.players.find((p) => p.id === state.loserId);
+                  return loser && state.loserId !== userId
+                    ? `${loser.name} is Bhabi`
+                    : undefined;
+                })()
+              : undefined
+          }
+          onHome={() => {
+            void leaveRoom(gameId).finally(() => {
+              void stopMusic();
+              void lockLandscapeOrientation();
+              router.replace(homeHref);
+            });
+          }}
+        />
       ) : null}
 
       <GameChrome
@@ -699,18 +730,21 @@ export function BluffOnlinePlay({
                 ? 'CLAIM RANK…'
                 : isMyTurn
                   ? canCall
-                    ? 'CALL · PASS · THROW'
+                    ? 'YOUR TURN · CALL / PASS / THROW'
                     : canPass
-                      ? 'PASS OR THROW'
+                      ? 'YOUR TURN · PASS OR THROW'
                       : 'YOUR TURN · THROW'
-                  : 'Waiting…'
+                  : turnPlayer
+                    ? `${turnPlayer.name}'s turn`
+                    : 'Waiting…'
         }
         yourTurn={!!isMyTurn && !dealing && !collectTo && !revealFaceUp}
         onExit={() => {
-          void leaveRoom(gameId).finally(() => {
-            void stopMusic();
-            void lockLandscapeOrientation();
-            router.replace('/online');
+          confirmQuitGame({
+            message:
+              'You will leave this table. Other players can continue without you.',
+            beforeNavigate: () => leaveRoom(gameId),
+            href: homeHref,
           });
         }}
       />
@@ -728,8 +762,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     zIndex: 28,
     alignItems: 'center',
-    width: 120,
-    gap: 6,
+    width: 160,
+    gap: 8,
+  },
+  turnBannerWrap: {
+    marginBottom: 4,
+    alignItems: 'center',
   },
   claimOrb: {
     width: 96,
@@ -838,12 +876,12 @@ const styles = StyleSheet.create({
   },
   handDock: {
     position: 'absolute',
-    zIndex: GAME_THEME.layers.playerHand,
+    zIndex: GAME_THEME.layers.gameControls + 20,
     alignItems: 'center',
   },
   actionBar: {
     position: 'absolute',
-    zIndex: 50,
+    zIndex: GAME_THEME.layers.gameControls + 21,
     alignItems: 'stretch',
     gap: 2,
     paddingHorizontal: 6,
@@ -867,7 +905,7 @@ const styles = StyleSheet.create({
   },
   sheetBackdrop: {
     ...StyleSheet.absoluteFill,
-    zIndex: 80,
+    zIndex: GAME_THEME.layers.gameControls + 40,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -924,18 +962,4 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   err: { color: '#FF8A7A', textAlign: 'center', fontSize: 10 },
-  over: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    justifyContent: 'center',
-    padding: 32,
-    zIndex: 60,
-  },
-  overTitle: {
-    color: ART_DECO_PALETTE.goldLight,
-    fontSize: 22,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
 });

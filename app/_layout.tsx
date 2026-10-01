@@ -1,9 +1,9 @@
 import { DarkTheme, ThemeProvider } from 'expo-router/react-navigation';
-import { Stack, usePathname } from 'expo-router';
+import { Stack, router, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, StyleSheet } from 'react-native';
+import { AppState, BackHandler, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -16,6 +16,8 @@ import { initAudio, resetAudio } from '@/src/services/audio';
 import { loadPlayerName } from '@/src/services/online';
 import { lockLandscapeOrientation } from '@/src/services/orientation';
 import { preloadGameAssets } from '@/src/services/preloadAssets';
+import { useDialogStore } from '@/src/store/dialogStore';
+import { navigateAfterQuit } from '@/src/services/quitGame';
 
 SplashScreen.preventAutoHideAsync();
 void preloadGameAssets();
@@ -60,8 +62,12 @@ export default function RootLayout() {
   const pathname = usePathname();
 
   useEffect(() => {
-    void resetAudio();
-    void initAudio();
+    // Reset then init in order — parallel fire-and-forget used to race and
+    // leave Android with released players / no session.
+    void (async () => {
+      resetAudio();
+      await initAudio();
+    })();
     void loadPlayerName();
     void lockLandscapeOrientation();
     void preloadGameAssets().finally(() => {
@@ -93,6 +99,33 @@ export default function RootLayout() {
     void lockLandscapeOrientation();
     const t = setTimeout(() => void lockLandscapeOrientation(), 120);
     return () => clearTimeout(t);
+  }, [pathname]);
+
+  // Safety net: never let Android finish the Activity off the home screen.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (useDialogStore.getState().visible) {
+        useDialogStore.getState().close();
+        return true;
+      }
+      const onHome =
+        pathname === '/' ||
+        pathname === '' ||
+        pathname === '/index';
+      if (onHome) {
+        // On home, allow default (user can leave the app).
+        return false;
+      }
+      // Prefer normal back through the menu stack; only force home if empty
+      // (empty stack used to finish the Android Activity).
+      if (router.canGoBack()) {
+        router.back();
+        return true;
+      }
+      navigateAfterQuit('/');
+      return true;
+    });
+    return () => sub.remove();
   }, [pathname]);
 
   const onSplashDone = useCallback(() => setShowSplash(false), []);

@@ -2,24 +2,33 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { showAlert } from '@/src/services/dialogs';
+import { confirmQuitGame } from '@/src/services/quitGame';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameChrome } from '@/src/components/game/GameChrome';
 import { EscapeCelebration } from '@/src/components/game/EscapeCelebration';
+import { GameOverScreen } from '@/src/components/game/GameOverScreen';
 import { GameTable } from '@/src/components/game/GameTable';
 import { BluffOnlinePlay } from '@/src/components/game/BluffOnlinePlay';
 import { TableLobbyControls } from '@/src/components/game/TableLobbyControls';
 import { PlayerHand } from '@/src/components/game/PlayerHand';
+import { TurnBanner } from '@/src/components/game/TurnBanner';
 import { AppButton } from '@/src/components/ui/AppButton';
 import { GameBackground } from '@/src/components/table';
 import { ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import { GAME_THEME } from '@/src/constants/gameTheme';
 import { GAME_TIMING } from '@/src/constants/timing';
-import { chooseCard } from '@/src/game/ai/chooseCard';
 import { isAceOfSpades } from '@/src/game/deck';
 import { getPlayableCards } from '@/src/game/rules/playable';
 import { buildLobbyTableState } from '@/src/game/lobbyTableState';
+import { getSeatOriginForPlayer } from '@/src/game/seatOrigin';
+import {
+  nextHeldTrickPlays,
+  tableVisiblePlays,
+  trickPlaysSignature,
+} from '@/src/game/trickHold';
 import type { BluffState } from '@/src/game/bluff';
-import type { GameState } from '@/src/game/types';
+import type { GameState, TrickPlay } from '@/src/game/types';
+import type { ThullaMoment } from '@/src/store/gameStore';
 import {
   ensureAnonymousSession,
   fetchLobby,
@@ -69,7 +78,11 @@ export default function OnlineGameScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [autoOn, setAutoOn] = useState(false);
+  const [heldTrickPlays, setHeldTrickPlays] = useState<TrickPlay[] | null>(
+    null
+  );
+  const [thullaMoment, setThullaMoment] = useState<ThullaMoment | null>(null);
+  const [thullaCollectReady, setThullaCollectReady] = useState(false);
   const [fullTableCountdown, setFullTableCountdown] = useState<number | null>(
     null
   );
@@ -77,12 +90,18 @@ export default function OnlineGameScreen() {
     typeof codeParam === 'string' ? codeParam : ''
   );
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [showGameOver, setShowGameOver] = useState(false);
   const winSoundPlayed = useRef(false);
-  const skipNextAutoPlay = useRef(false);
   const autoStartRef = useRef(false);
   const lobbyWaitStartedAt = useRef<number | null>(null);
+  const prevStateRef = useRef<GameState | null>(null);
+  const heldRef = useRef<TrickPlay[] | null>(null);
   const { name: escapedName, dismiss: dismissEscape, holdResults } =
     useEscapeCelebration(state, userId ? [userId] : []);
+
+  useEffect(() => {
+    heldRef.current = heldTrickPlays;
+  }, [heldTrickPlays]);
 
   useEffect(() => {
     if (!gameId || roomCode) return;
@@ -90,6 +109,43 @@ export default function OnlineGameScreen() {
       if (code) setRoomCode(code);
     });
   }, [gameId, roomCode]);
+
+  const ingestThullaState = useCallback((next: GameState) => {
+    const prev = prevStateRef.current;
+    const { held, thulla, revive } = nextHeldTrickPlays(
+      prev,
+      next,
+      heldRef.current
+    );
+    prevStateRef.current = next;
+    setState(next);
+    setBluffState(null);
+    setPhase('playing');
+    useGameStore.setState({ state: next });
+
+    if (thulla && revive) {
+      setThullaMoment(thulla);
+      setThullaCollectReady(false);
+      setHeldTrickPlays(thulla.plays);
+      return;
+    }
+
+    if (held && revive) {
+      // New resolution — start/restart the brief hold lock
+      setHeldTrickPlays(held);
+      return;
+    }
+
+    if (next.trick.plays.length > 0) {
+      // Live trick supersedes any resolved hold
+      if (
+        trickPlaysSignature(heldRef.current) !== trickPlaysSignature(held)
+      ) {
+        setHeldTrickPlays(held);
+      }
+    }
+    // If held is null or revive=false with previousHeld: leave timer alone
+  }, []);
 
   const applyPlayingState = useCallback(
     (
@@ -105,17 +161,17 @@ export default function OnlineGameScreen() {
         setBluffState(next);
         setState(null);
         setPhase('playing');
+        prevStateRef.current = null;
+        setHeldTrickPlays(null);
+        setThullaMoment(null);
         return;
       }
       const next = viewerId
         ? sanitizeGameStateForPlayer(raw as GameState, viewerId)
         : (raw as GameState);
-      setState(next);
-      setBluffState(null);
-      setPhase('playing');
-      useGameStore.setState({ state: next });
+      ingestThullaState(next);
     },
-    []
+    [ingestThullaState]
   );
 
   const syncPlaying = useCallback(async (): Promise<boolean> => {
@@ -141,10 +197,14 @@ export default function OnlineGameScreen() {
     setLobbyGameType(type);
     if (data.game.room_code) setRoomCode(data.game.room_code);
 
-    if (data.game.status === 'playing' && data.game.game_state) {
+    if (
+      (data.game.status === 'playing' || data.game.status === 'completed') &&
+      data.game.game_state
+    ) {
+      // Keep everyone on the table through game_complete so all see the win UI.
+      // (Previously `completed` bounced peers to /online before the popup.)
       const ok = await syncPlaying();
       if (!ok && userId) {
-        // Edge snapshot failed — still leave lobby using lobby payload.
         applyPlayingState(
           data.game.game_state as GameState | BluffState,
           type,
@@ -153,8 +213,7 @@ export default function OnlineGameScreen() {
       }
       return;
     }
-    if (data.game.status === 'cancelled' || data.game.status === 'completed') {
-      // Stale / merged-away lobby — jump back into Quick Match.
+    if (data.game.status === 'cancelled') {
       if (isQuickMatchRoom(data.game.room_code)) {
         router.replace('/online/match');
       } else {
@@ -218,23 +277,97 @@ export default function OnlineGameScreen() {
 
   const me = state?.players.find((p) => p.id === userId);
   const isMyTurn = state?.currentTurnPlayerId === userId;
+  const turnPlayer = state?.players.find(
+    (p) => p.id === state.currentTurnPlayerId
+  );
+  const holdingResolvedTrick =
+    Boolean(thullaMoment) ||
+    (heldTrickPlays != null &&
+      heldTrickPlays.length > 0 &&
+      (state?.trick.plays.length ?? 0) === 0);
 
   useEffect(() => {
     if (!isMyTurn) setSelectedId(null);
   }, [isMyTurn]);
 
-  useGameSfx(state, state?.trick.plays.length ?? 0, !state || phase !== 'playing');
+  const visibleTrickCount = state
+    ? tableVisiblePlays(state, heldTrickPlays).length
+    : 0;
+  useGameSfx(state, visibleTrickCount, !state || phase !== 'playing');
 
   const gameOver = state?.phase === 'game_complete';
   useTableMusic(phase === 'playing' && Boolean(state) && !gameOver);
 
+  // Brief hold so the completed pile (both cards in 2p) stays visible
+  useEffect(() => {
+    if (
+      !heldTrickPlays ||
+      heldTrickPlays.length === 0 ||
+      thullaMoment ||
+      (state?.trick.plays.length ?? 0) > 0
+    ) {
+      return;
+    }
+    const t = setTimeout(() => {
+      setHeldTrickPlays(null);
+    }, GAME_TIMING.trickResolveMs);
+    return () => clearTimeout(t);
+  }, [heldTrickPlays, thullaMoment, state?.trick.plays.length]);
+
+  useEffect(() => {
+    if (!thullaMoment) {
+      setThullaCollectReady(false);
+      return;
+    }
+    setThullaCollectReady(false);
+    const ready = setTimeout(() => setThullaCollectReady(true), 700);
+    // Safety: never lock the table forever if collect animation misses
+    const forceClear = setTimeout(() => {
+      setThullaMoment(null);
+      setThullaCollectReady(false);
+      setHeldTrickPlays(null);
+    }, GAME_TIMING.thullaHoldMs + 800);
+    return () => {
+      clearTimeout(ready);
+      clearTimeout(forceClear);
+    };
+  }, [thullaMoment]);
+
+  // Absolute safety: if a resolved hold somehow never clears, unlock
+  useEffect(() => {
+    if (
+      !heldTrickPlays ||
+      heldTrickPlays.length === 0 ||
+      (state?.trick.plays.length ?? 0) > 0
+    ) {
+      return;
+    }
+    const t = setTimeout(() => {
+      setHeldTrickPlays(null);
+      setThullaMoment(null);
+      setThullaCollectReady(false);
+    }, GAME_TIMING.trickResolveMs + 2500);
+    return () => clearTimeout(t);
+  }, [heldTrickPlays, state?.trick.plays.length]);
+
+  const onThullaDone = useCallback(() => {
+    setThullaMoment(null);
+    setThullaCollectReady(false);
+    setHeldTrickPlays(null);
+  }, []);
+
   useEffect(() => {
     if (state?.phase !== 'game_complete') {
       winSoundPlayed.current = false;
+      setShowGameOver(false);
       return;
     }
     if (holdResults.current || escapedName) return;
-    if (winSoundPlayed.current) return;
+    if (thullaMoment) return;
+    if (winSoundPlayed.current) {
+      setShowGameOver(true);
+      return;
+    }
     winSoundPlayed.current = true;
     void stopMusic();
     if (me?.status === 'escaped') {
@@ -242,9 +375,25 @@ export default function OnlineGameScreen() {
     } else if (me?.status === 'bhabhi') {
       void playSfx('error');
     }
-    const t = setTimeout(() => router.replace('/game/results'), 700);
+    const t = setTimeout(() => setShowGameOver(true), 450);
     return () => clearTimeout(t);
-  }, [state?.phase, escapedName, holdResults, me?.status]);
+  }, [state?.phase, escapedName, holdResults, me?.status, thullaMoment]);
+
+  const quitOnlineHref =
+    roomCode && isQuickMatchRoom(roomCode) ? '/online/match' : '/online';
+
+  const goOnlineHome = useCallback(() => {
+    void (async () => {
+      try {
+        if (gameId) await leaveRoom(gameId);
+      } catch {
+        // ignore
+      }
+      void stopMusic();
+      void lockLandscapeOrientation();
+      router.replace(quitOnlineHref);
+    })();
+  }, [gameId, quitOnlineHref]);
 
   // Auto-deal: from the moment 2+ are seated, wait up to 10s then start
   // with 2, 3, or 4. If a 4th joins earlier, deal right away.
@@ -326,108 +475,62 @@ export default function OnlineGameScreen() {
   ]);
 
   const onLeaveTable = () => {
-    if (!gameId) {
-      router.replace('/online');
-      return;
-    }
-    void leaveRoom(gameId).finally(() => {
-      void stopMusic();
-      router.replace('/online');
+    confirmQuitGame({
+      message:
+        phase === 'waiting'
+          ? 'Leave this table and return to online play.'
+          : 'You will leave this table. Other players can continue without you.',
+      beforeNavigate: gameId ? () => leaveRoom(gameId) : undefined,
+      href: quitOnlineHref,
     });
   };
 
   const onPlay = async (cardId?: string) => {
     const id = cardId ?? selectedId;
-    if (!id || !gameId || !isMyTurn || submitting) return;
+    if (!id || !gameId || !isMyTurn || submitting || holdingResolvedTrick) return;
     setSubmitting(true);
     try {
+      // Optimistic hold so the completing card appears before the round-trip
+      if (state && me) {
+        const card = me.hand.find((c) => c.id === id);
+        if (card) {
+          const optimistic: TrickPlay[] = [
+            ...state.trick.plays,
+            { playerId: me.id, card, isThulla: false },
+          ];
+          setHeldTrickPlays(optimistic);
+        }
+      }
       const next = await playOnlineCard(gameId, id);
-      setState(next);
+      ingestThullaState(next);
       setSelectedId(null);
       await triggerHaptic('light');
     } catch {
       setSelectedId(null);
+      setHeldTrickPlays(null);
+      setThullaMoment(null);
       await syncPlaying();
     } finally {
       setSubmitting(false);
     }
   };
 
-  const onTurnTimeout = useCallback(() => {
-    if (!gameId || !state || !me || submitting) return;
-    skipNextAutoPlay.current = true;
-    setAutoOn(true);
-    void triggerHaptic('warning');
-    void playSfx('pass_turn');
-    try {
-      const card = chooseCard({
-        state,
-        playerId: me.id,
-        difficulty: 'medium',
-      });
-      setSubmitting(true);
-      void playOnlineCard(gameId, card.id)
-        .then(async (next) => {
-          setState(next);
-          setSelectedId(null);
-          await triggerHaptic('light');
-        })
-        .catch(async () => {
-          await syncPlaying();
-        })
-        .finally(() => setSubmitting(false));
-    } catch {
-      setSubmitting(false);
-    }
-  }, [gameId, state, me, submitting, syncPlaying]);
-
   const turnActive =
     phase === 'playing' &&
-    Boolean(isMyTurn && !autoOn && !submitting && !gameOver && state);
+    Boolean(isMyTurn && !submitting && !gameOver && state && !holdingResolvedTrick);
   const turnKey =
     state && phase === 'playing' && !gameOver && state.currentTurnPlayerId
       ? `${state.currentTurnPlayerId}:${state.trick.plays.length}:${state.events.length}`
       : null;
 
   const { secondsLeft, progress: turnProgress } = useTurnTimer({
-    turnKey,
+    turnKey: turnActive || (phase === 'playing' && !!state && !gameOver)
+      ? turnKey
+      : null,
     durationMs: GAME_TIMING.turnTimeoutMs,
-    enableTimeout: turnActive,
-    onTimeout: onTurnTimeout,
+    // Auto play removed — timer is visual only for now
+    enableTimeout: false,
   });
-
-  useEffect(() => {
-    if (!autoOn || !isMyTurn || submitting || !state || !me || !gameId) return;
-    if (phase !== 'playing') return;
-    if (skipNextAutoPlay.current) {
-      skipNextAutoPlay.current = false;
-      return;
-    }
-    const playerId = me.id;
-    const t = setTimeout(() => {
-      try {
-        const card = chooseCard({
-          state,
-          playerId,
-          difficulty: 'medium',
-        });
-        setSubmitting(true);
-        void playOnlineCard(gameId, card.id)
-          .then(async (next) => {
-            setState(next);
-            setSelectedId(null);
-            await triggerHaptic('light');
-          })
-          .catch(async () => {
-            await syncPlaying();
-          })
-          .finally(() => setSubmitting(false));
-      } catch {
-        setSubmitting(false);
-      }
-    }, GAME_TIMING.aiThinkMs);
-    return () => clearTimeout(t);
-  }, [autoOn, isMyTurn, submitting, state, me, gameId, phase, syncPlaying]);
 
   if (phase === 'loading') {
     return (
@@ -523,6 +626,7 @@ export default function OnlineGameScreen() {
           roomCode={roomCode || 'BLUFF'}
           initialState={bluffState}
           onState={setBluffState}
+          homeHref={quitOnlineHref}
         />
       </GameBackground>
     );
@@ -540,6 +644,8 @@ export default function OnlineGameScreen() {
   }
 
   const roomCodeShown = roomCode || 'ROOM';
+  const canInteract =
+    Boolean(isMyTurn && !submitting && !gameOver && !holdingResolvedTrick);
 
   const playableIds = (() => {
     if (!me || !state) return null;
@@ -554,6 +660,50 @@ export default function OnlineGameScreen() {
     }
     return getPlayableCards(me.hand, state.trick.leadSuit).map((c) => c.id);
   })();
+
+  const statusLine = gameOver
+    ? 'Round over…'
+    : thullaMoment
+      ? 'Thulla!'
+      : isMyTurn
+        ? 'YOUR TURN'
+        : turnPlayer
+          ? `${turnPlayer.name}'s turn`
+          : 'Waiting…';
+
+  const visiblePlays = thullaMoment?.plays ?? tableVisiblePlays(state, heldTrickPlays);
+
+  const bhabhiPlayer = state.players.find((p) => p.id === state.bhabhiId);
+  const myEscapePlace =
+    me && me.status === 'escaped'
+      ? state.escapedOrder.indexOf(me.id) + 1
+      : 0;
+  const placeLabel =
+    myEscapePlace === 1
+      ? '1st out'
+      : myEscapePlace === 2
+        ? '2nd out'
+        : myEscapePlace === 3
+          ? '3rd out'
+          : myEscapePlace > 0
+            ? `${myEscapePlace}th out`
+            : undefined;
+  const overOutcome =
+    me?.status === 'escaped' ? 'win' : me?.status === 'bhabhi' ? 'lose' : 'over';
+  const overTitle =
+    me?.status === 'escaped'
+      ? 'YOU ESCAPED!'
+      : me?.status === 'bhabhi'
+        ? "YOU'RE BHABI"
+        : 'ROUND OVER';
+  const overSubtitle =
+    me?.status === 'escaped'
+      ? placeLabel
+      : me?.status === 'bhabhi'
+        ? 'Last one holding cards'
+        : bhabhiPlayer
+          ? `${bhabhiPlayer.name} is Bhabi`
+          : undefined;
 
   return (
     <GameBackground>
@@ -573,11 +723,38 @@ export default function OnlineGameScreen() {
             state={state}
             localPlayerId={userId}
             hideBottomSeat
+            visiblePlays={visiblePlays}
+            collectTo={
+              thullaMoment && thullaCollectReady
+                ? getSeatOriginForPlayer(
+                    state,
+                    userId,
+                    thullaMoment.collectorId
+                  )
+                : null
+            }
+            onCollectDone={onThullaDone}
             turnSeconds={secondsLeft}
             turnProgress={turnProgress}
             turnDurationSec={Math.round(GAME_TIMING.turnTimeoutMs / 1000)}
           />
         </View>
+
+        {!gameOver && turnPlayer && phase === 'playing' ? (
+          <View
+            style={[
+              styles.turnBannerMount,
+              { top: Math.max(insets.top, 8) + 36 },
+            ]}
+            pointerEvents="none"
+          >
+            <TurnBanner
+              name={turnPlayer.name}
+              isYou={!!isMyTurn}
+              secondsLeft={secondsLeft}
+            />
+          </View>
+        ) : null}
 
         {me && me.status === 'active' && (
           <View
@@ -594,13 +771,17 @@ export default function OnlineGameScreen() {
               hand={me.hand}
               leadSuit={state.trick.leadSuit}
               selectedId={selectedId}
-              interactive={isMyTurn && !submitting}
+              interactive={canInteract}
               compact={room.compactHand}
               liftOnPress
               playableIds={playableIds}
               onSelect={(c) => {
-                setSelectedId(c.id);
-                void onPlay(c.id);
+                // 1st tap: lift/select · 2nd tap on same card: throw
+                if (selectedId === c.id) {
+                  void onPlay(c.id);
+                } else {
+                  setSelectedId(c.id);
+                }
               }}
             />
           </View>
@@ -621,22 +802,32 @@ export default function OnlineGameScreen() {
         <GameChrome
           roomCode={roomCodeShown}
           latencyMs={latencyMs}
-          statusLine={isMyTurn ? 'YOUR TURN' : 'Waiting…'}
+          statusLine={statusLine}
           yourTurn={!!isMyTurn}
           onExit={() => {
-            void stopMusic();
-            void lockLandscapeOrientation();
-            router.replace('/');
-            setTimeout(() => void lockLandscapeOrientation(), 80);
+            confirmQuitGame({
+              message:
+                'You will leave this table. Other players can continue without you.',
+              beforeNavigate: gameId ? () => leaveRoom(gameId) : undefined,
+              href: quitOnlineHref,
+            });
           }}
-          onAuto={() => {
-            setAutoOn((on) => !on);
-            void triggerHaptic('selection');
-          }}
-          autoActive={autoOn}
         />
         {escapedName ? (
           <EscapeCelebration name={escapedName} onDone={dismissEscape} />
+        ) : null}
+        {showGameOver ? (
+          <GameOverScreen
+            outcome={overOutcome}
+            title={overTitle}
+            subtitle={overSubtitle}
+            detail={
+              state.escapedOrder.length > 0
+                ? `${state.escapedOrder.length} escaped · ${state.players.length} played`
+                : undefined
+            }
+            onHome={goOnlineHome}
+          />
         ) : null}
       </View>
     </GameBackground>
@@ -673,6 +864,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 12,
     gap: 8,
+  },
+  turnBannerMount: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: GAME_THEME.layers.gameControls + 5,
   },
   youLabel: {
     color: ART_DECO_PALETTE.ivory,

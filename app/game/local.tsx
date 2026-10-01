@@ -19,7 +19,7 @@ import { GAME_ASSETS, ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import { cachedAssetSource } from '@/src/services/preloadAssets';
 import { GAME_THEME } from '@/src/constants/gameTheme';
 import { GAME_TIMING } from '@/src/constants/timing';
-import { chooseCard } from '@/src/game/ai/chooseCard';
+import { TurnBanner } from '@/src/components/game/TurnBanner';
 import { getSeatOriginForPlayer } from '@/src/game/seatOrigin';
 import { useEscapeCelebration } from '@/src/hooks/useEscapeCelebration';
 import { useGameSfx } from '@/src/hooks/useGameSfx';
@@ -27,8 +27,8 @@ import { useRoomLayout } from '@/src/hooks/useRoomLayout';
 import { useTableMusic } from '@/src/hooks/useTableMusic';
 import { useTurnTimer } from '@/src/hooks/useTurnTimer';
 import { playSfx, stopMusic } from '@/src/services/audio';
-import { showAlert, showConfirm } from '@/src/services/dialogs';
-import { lockLandscapeOrientation } from '@/src/services/orientation';
+import { showAlert } from '@/src/services/dialogs';
+import { confirmQuitGame, navigateAfterQuit } from '@/src/services/quitGame';
 import { triggerHaptic } from '@/src/services/haptics';
 import { useGameStore } from '@/src/store/gameStore';
 import { useStatsStore } from '@/src/store/statsStore';
@@ -53,8 +53,6 @@ export default function LocalGameScreen() {
 
   const [dealing, setDealing] = useState(true);
   const [playLocked, setPlayLocked] = useState(false);
-  const [autoOn, setAutoOn] = useState(false);
-  const skipNextAutoPlay = useRef(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [thullaCollectReady, setThullaCollectReady] = useState(false);
   const recordedRef = useRef(false);
@@ -64,10 +62,9 @@ export default function LocalGameScreen() {
     useEscapeCelebration(state, localHumanIds, !!thullaMoment);
 
   useEffect(() => {
-    if (!state) {
-      router.replace('/');
-      return;
-    }
+    // Do not auto-exit when state clears — Quit handles navigation.
+    // Auto-replace('/') here races cleanup and can close the Android app.
+    if (!state) return;
     if (dealShownForGame.current !== state.id) {
       dealShownForGame.current = state.id;
       setDealing(true);
@@ -265,44 +262,6 @@ export default function LocalGameScreen() {
     0;
   useGameSfx(state, visibleCount, dealing || !state);
 
-  const onTurnTimeout = useCallback(() => {
-    skipNextAutoPlay.current = true;
-    setAutoOn(true);
-    void triggerHaptic('warning');
-    void playSfx('pass_turn');
-    const store = useGameStore.getState();
-    const st = store.state;
-    const pid = st?.currentTurnPlayerId;
-    if (!st || !pid) return;
-    const player = st.players.find((p) => p.id === pid);
-    if (!player || player.type !== 'human') return;
-    try {
-      const card = chooseCard({
-        state: st,
-        playerId: pid,
-        difficulty: 'medium',
-      });
-      setPlayLocked(true);
-      const ok = store.playLocalCard(pid, card.id);
-      if (!ok) {
-        setPlayLocked(false);
-        return;
-      }
-      const after = useGameStore.getState();
-      if (
-        after.thullaMoment != null ||
-        (after.heldTrickPlays &&
-          after.heldTrickPlays.length > 0 &&
-          after.state?.trick.plays.length === 0)
-      ) {
-        return;
-      }
-      setTimeout(() => setPlayLocked(false), GAME_TIMING.afterPlayMs);
-    } catch {
-      setPlayLocked(false);
-    }
-  }, []);
-
   const turnKey =
     state &&
     !dealing &&
@@ -315,51 +274,14 @@ export default function LocalGameScreen() {
   const { secondsLeft, progress: turnProgress } = useTurnTimer({
     turnKey,
     durationMs: GAME_TIMING.turnTimeoutMs,
-    enableTimeout: Boolean(canInteract && !autoOn),
-    onTimeout: onTurnTimeout,
+    enableTimeout: false,
   });
-
-  useEffect(() => {
-    if (!autoOn || !canInteract || !state || !currentPlayer) return;
-    if (skipNextAutoPlay.current) {
-      skipNextAutoPlay.current = false;
-      return;
-    }
-    const t = setTimeout(() => {
-      try {
-        const card = chooseCard({
-          state,
-          playerId: currentPlayer.id,
-          difficulty: 'medium',
-        });
-        setPlayLocked(true);
-        const ok = playLocalCard(currentPlayer.id, card.id);
-        if (!ok) {
-          setPlayLocked(false);
-          return;
-        }
-        void triggerHaptic('light');
-        const store = useGameStore.getState();
-        if (
-          store.thullaMoment != null ||
-          (store.heldTrickPlays &&
-            store.heldTrickPlays.length > 0 &&
-            store.state?.trick.plays.length === 0)
-        ) {
-          return;
-        }
-        setTimeout(() => setPlayLocked(false), GAME_TIMING.afterPlayMs);
-      } catch {
-        setPlayLocked(false);
-      }
-    }, GAME_TIMING.aiThinkMs);
-    return () => clearTimeout(t);
-  }, [autoOn, canInteract, state, currentPlayer, playLocalCard]);
 
   if (!state || !dockPlayer) {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
-        <Text style={styles.muted}>Loading…</Text>
+        <Text style={styles.muted}>No game in progress</Text>
+        <AppButton title="Home" onPress={() => navigateAfterQuit('/')} />
       </View>
     );
   }
@@ -448,6 +370,22 @@ export default function LocalGameScreen() {
           ) : null}
         </View>
 
+        {!dealing && !gameOver && currentPlayer ? (
+          <View
+            style={[
+              styles.turnBannerMount,
+              { top: Math.max(insets.top, 8) + 36 },
+            ]}
+            pointerEvents="none"
+          >
+            <TurnBanner
+              name={currentPlayer.name}
+              isYou={!!yourTurn}
+              secondsLeft={secondsLeft}
+            />
+          </View>
+        ) : null}
+
         {/* Hand stays hidden while the deal plays */}
         {!dealing ? (
         <View
@@ -484,9 +422,14 @@ export default function LocalGameScreen() {
                 interactive={canInteract}
                 hidden={!handRevealed && isPassPlay}
                 compact={room.compactHand}
+                liftOnPress
                 onSelect={(c) => {
-                  setSelectedId(c.id);
-                  void onPlayCard(c.id);
+                  // 1st tap: lift/select · 2nd tap on same card: throw
+                  if (selectedId === c.id) {
+                    void onPlayCard(c.id);
+                  } else {
+                    setSelectedId(c.id);
+                  }
                 }}
               />
             </View>
@@ -518,26 +461,13 @@ export default function LocalGameScreen() {
           statusLine={statusLine}
           yourTurn={yourTurn}
           onExit={() =>
-            showConfirm('Leave game?', 'Progress will be lost.', [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Leave',
-                style: 'destructive',
-                onPress: () => {
-                  clearGame();
-                  void stopMusic();
-                  void lockLandscapeOrientation();
-                  router.replace('/');
-                  setTimeout(() => void lockLandscapeOrientation(), 80);
-                },
+            confirmQuitGame({
+              message: 'Progress on this table will be lost.',
+              beforeNavigate: () => {
+                clearGame();
               },
-            ])
+            })
           }
-          onAuto={() => {
-            setAutoOn((on) => !on);
-            void triggerHaptic('selection');
-          }}
-          autoActive={autoOn}
         />
 
         {escapedName ? (
@@ -564,7 +494,8 @@ const styles = StyleSheet.create({
   },
   handDock: {
     position: 'absolute',
-    zIndex: GAME_THEME.layers.playerHand,
+    // Above GameChrome so taps hit cards (Android blocks box-none through HUD)
+    zIndex: GAME_THEME.layers.gameControls + 20,
     alignItems: 'center',
   },
   handColumn: {
@@ -606,6 +537,13 @@ const styles = StyleSheet.create({
     color: '#1A120C',
     fontWeight: '900',
     fontSize: 11,
+  },
+  turnBannerMount: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: GAME_THEME.layers.gameControls + 5,
   },
   passReady: {
     flexDirection: 'row',

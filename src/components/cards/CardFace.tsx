@@ -24,7 +24,7 @@ export const CardFace = memo(function CardFace({
   const radius = px(h * 0.06);
 
   return (
-    <View style={[styles.photo, { width: w, height: h, borderRadius: radius }]}>
+    <View style={[styles.photo, { width: w, height: h, borderRadius: radius }]} pointerEvents="none">
       <Image
         source={CARD_FACES[card.suit][card.rank]}
         style={{ width: w, height: h }}

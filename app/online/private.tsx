@@ -5,6 +5,7 @@ import {
   Subtitle,
   Title,
 } from '@/src/components/ui/AppButton';
+import { CARD_FACES } from '@/src/components/cards/cardFaces';
 import { DeckOptionCard } from '@/src/components/ui/DeckOptionCard';
 import { GAME_ASSETS, ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import { COLORS } from '@/src/constants/theme';
@@ -47,17 +48,29 @@ export default function PrivateTableScreen() {
           sub="Get a code to share"
           glyph="✦"
           image={GAME_ASSETS.tableComposition}
+          peekCards={[
+            CARD_FACES.diamonds.A,
+            CARD_FACES.clubs.K,
+            CARD_FACES.hearts.Q,
+          ]}
           primary
           disabled={!ready}
           onPress={() => void go('/online/create')}
+          style={styles.deckTile}
         />
         <DeckOptionCard
           label="Join Room"
           sub="Enter a friend’s code"
           glyph="◎"
           image={GAME_ASSETS.playerFrame}
+          peekCards={[
+            CARD_FACES.spades.J,
+            CARD_FACES.hearts['10'],
+            CARD_FACES.clubs['9'],
+          ]}
           disabled={!ready}
           onPress={() => void go('/online/join')}
+          style={styles.deckTile}
         />
       </View>
 
@@ -84,11 +97,17 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    justifyContent: 'center',
     gap: 12,
     width: '100%',
     marginTop: 18,
     maxWidth: 420,
     alignSelf: 'center',
+  },
+  deckTile: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: '50%',
   },
   warn: {
     backgroundColor: 'rgba(58,42,16,0.88)',

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  BackHandler,
   Pressable,
   StyleSheet,
   Text,
@@ -15,6 +16,7 @@ import { GAME_THEME } from '../../constants/gameTheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoomLayout } from '../../hooks/useRoomLayout';
 import { triggerHaptic } from '../../services/haptics';
+import { useDialogStore } from '../../store/dialogStore';
 import { useSettingsStore } from '../../store/settingsStore';
 
 /** Black + gold chrome chrome matching Asset #8 */
@@ -230,11 +232,11 @@ export function ActionCluster({
         { width: size, height: size, borderRadius: Math.round(size * 0.22) },
         active && styles.autoBtnOn,
       ]}
-      accessibilityLabel={active ? 'Rejoin and play yourself' : 'Auto play'}
+      accessibilityLabel={active ? 'Auto play on — tap to rejoin' : 'Enable auto play'}
       accessibilityState={{ selected: !!active }}
     >
       <Text style={[styles.autoText, active && styles.autoTextOn]}>
-        {active ? 'Join' : 'Auto'}
+        {active ? 'ON' : 'Auto'}
       </Text>
     </Pressable>
   );
@@ -314,6 +316,21 @@ export function GameChrome({
     };
   }, []);
 
+  // Android system back must not finish the Activity — same as Quit.
+  useEffect(() => {
+    if (!onExit) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Always consume back on the game table so Android never exits the app.
+      if (useDialogStore.getState().visible) {
+        useDialogStore.getState().close();
+        return true;
+      }
+      onExit();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onExit]);
+
   const send = (text: string) => {
     setBubble(text);
     setPanel(null);
@@ -344,16 +361,17 @@ export function GameChrome({
           onPress={() => onExit?.()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Exit game"
+          accessibilityLabel="Quit game"
           style={[styles.exitBtn, { marginLeft: room.leftNudge }]}
         >
-          <Text style={styles.exitText}>Exit</Text>
+          <Text style={styles.exitText}>Quit</Text>
         </Pressable>
 
         <View style={styles.topCenter} pointerEvents="none">
           {autoActive ? (
             <View style={styles.autoHintPill}>
-              <Text style={styles.autoHintText}>Auto · tap Join</Text>
+              <View style={styles.autoHintDot} />
+              <Text style={styles.autoHintText}>AUTO PLAY ON · tap ON to join</Text>
             </View>
           ) : statusLine ? (
             <Text style={styles.statusHint} numberOfLines={1}>
@@ -457,7 +475,9 @@ export function GameChrome({
         pointerEvents="box-none"
       >
         <SideUtils size={room.control} />
-        <ActionCluster onAuto={onAuto} active={autoActive} size={room.control} />
+        {onAuto ? (
+          <ActionCluster onAuto={onAuto} active={autoActive} size={room.control} />
+        ) : null}
       </View>
     </View>
   );
@@ -484,17 +504,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   autoHintPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 10,
-    backgroundColor: 'rgba(214,175,85,0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(214,175,85,0.55)',
+    backgroundColor: 'rgba(214,175,85,0.28)',
+    borderWidth: 1.5,
+    borderColor: ART_DECO_PALETTE.gold,
+  },
+  autoHintDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: ART_DECO_PALETTE.gold,
   },
   autoHintText: {
     color: ART_DECO_PALETTE.goldLight,
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 11,
+    letterSpacing: 0.3,
   },
   statusHint: {
     color: 'rgba(247,241,227,0.7)',

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { GameState, TrickPlay } from '../../game/types';
 import { GAME_THEME } from '../../constants/gameTheme';
@@ -7,7 +7,7 @@ import { PlayingTable } from '../table/PlayingTable';
 import { CardBackView } from '../cards/CardBackView';
 import { LayoutDebug } from '../game-ui/LayoutDebug';
 import { PlayerSeat } from './PlayerSeat';
-import { TrickPlayCard, type SeatOrigin } from './TrickPlayCard';
+import { TrickPlayCard, clearThrowAnimationMemory, type SeatOrigin } from './TrickPlayCard';
 import { TurnSpaceTimer } from './TurnSpaceTimer';
 
 interface GameTableProps {
@@ -95,9 +95,16 @@ export function GameTable({
     state.players[0]!;
 
   const bottom = local;
-  const left = seatForRelative(state.players, local.seat, 1);
-  const top = seatForRelative(state.players, local.seat, 2);
-  const right = seatForRelative(state.players, local.seat, 3);
+  const others = state.players.filter((p) => p.id !== local.id);
+  // 2-player: seat opponent across (top) so both thrown cards read clearly.
+  const left =
+    others.length === 1 ? undefined : seatForRelative(state.players, local.seat, 1);
+  const top =
+    others.length === 1
+      ? others[0]
+      : seatForRelative(state.players, local.seat, 2);
+  const right =
+    others.length === 1 ? undefined : seatForRelative(state.players, local.seat, 3);
 
   const seatMap = useMemo(
     () => ({ bottom, top, left, right }),
@@ -105,6 +112,12 @@ export function GameTable({
   );
 
   const plays = visiblePlays ?? state.trick.plays;
+
+  // Next trick can animate fresh throws
+  useEffect(() => {
+    if (plays.length === 0) clearThrowAnimationMemory();
+  }, [plays.length]);
+
   const showLeft = left && left.id !== bottom.id;
   const showTop = top && top.id !== bottom.id && top.id !== left?.id;
   const showRight =
@@ -225,7 +238,7 @@ export function GameTable({
           const seatPlayer = seatMap[origin];
           const isTurn =
             Boolean(seatPlayer) &&
-            state.currentTurnPlayerId === seatPlayer.id &&
+            state.currentTurnPlayerId === seatPlayer!.id &&
             turnSeconds != null &&
             state.phase !== 'game_complete';
           const spaceW = trickCard.w + 8;
@@ -265,7 +278,7 @@ export function GameTable({
           if (!anchor) return null;
           return (
             <View
-              key={`${play.playerId}-${play.card.id}-${index}`}
+              key={`${play.playerId}-${play.card.id}`}
               style={[
                 absBox(anchor.box(trickCard.w, trickCard.h)),
                 { zIndex: GAME_THEME.layers.playedCards + index },

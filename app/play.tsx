@@ -6,8 +6,9 @@ import {
   Subtitle,
   Title,
 } from '@/src/components/ui/AppButton';
+import { CARD_FACES } from '@/src/components/cards/cardFaces';
 import { DeckOptionCard } from '@/src/components/ui/DeckOptionCard';
-import { GAME_ASSETS, ART_DECO_PALETTE } from '@/src/constants/gameAssets';
+import { ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import {
   CATALOG_GAMES,
   useGameCatalogStore,
@@ -74,25 +75,40 @@ export default function PlayHubScreen() {
           label="Offline"
           sub="Pass & Play · AI"
           glyph="♠"
-          image={GAME_ASSETS.table}
+          peekCards={[
+            CARD_FACES.spades.A,
+            CARD_FACES.hearts.A,
+            CARD_FACES.clubs.A,
+          ]}
           primary
           onPress={() => void go('/mode')}
+          style={styles.deckTile}
         />
         <DeckOptionCard
           label="Online"
           sub="Quick Match"
           glyph="≫"
-          image={GAME_ASSETS.thullaEffect}
+          peekCards={[
+            CARD_FACES.diamonds.K,
+            CARD_FACES.spades.K,
+            CARD_FACES.hearts.K,
+          ]}
           disabled={!onlineReady}
           onPress={() => void go('/online')}
+          style={styles.deckTile}
         />
         <DeckOptionCard
           label="Private Table"
           sub="Create · Join"
           glyph="♦"
-          image={GAME_ASSETS.environment}
+          peekCards={[
+            CARD_FACES.clubs.Q,
+            CARD_FACES.diamonds.Q,
+            CARD_FACES.spades.Q,
+          ]}
           disabled={!onlineReady}
           onPress={() => void go('/online/private')}
+          style={styles.deckTile}
         />
       </View>
 
@@ -144,11 +160,17 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    justifyContent: 'center',
     gap: 10,
     width: '100%',
     marginTop: 14,
     maxWidth: 520,
     alignSelf: 'center',
+  },
+  deckTile: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: '33.33%',
   },
   warn: {
     textAlign: 'center',

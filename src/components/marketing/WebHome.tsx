@@ -239,7 +239,7 @@ export function WebHome() {
                 label={g.title}
                 sub={g.blurb}
                 glyph={g.glyph}
-                image={g.image}
+                peekCards={g.peekCards}
                 primary={i === 0}
                 onPress={() => void openGame(g.id)}
                 style={styles.gameCard}
@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(4,12,10,0.55)',
   },
   heroGlow: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   hero: {
     flexDirection: 'row',
