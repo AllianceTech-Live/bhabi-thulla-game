@@ -36,7 +36,10 @@ module.exports = {
       },
       package: 'com.bhabithulla.app',
       predictiveBackGestureEnabled: false,
-      permissions: ['android.permission.MODIFY_AUDIO_SETTINGS'],
+      permissions: [
+        'android.permission.MODIFY_AUDIO_SETTINGS',
+        'com.google.android.gms.permission.AD_ID',
+      ],
     },
     web: {
       bundler: 'metro',
@@ -51,6 +54,7 @@ module.exports = {
       'expo-router',
       'expo-secure-store',
       'expo-asset',
+      './plugins/withAdIdPermission',
       [
         'expo-screen-orientation',
         {
