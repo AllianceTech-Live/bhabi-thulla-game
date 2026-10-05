@@ -14,7 +14,7 @@ import Animated, {
   FadeInDown,
   FadeInUp,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAppChromeInsets } from '@/src/hooks/useAppChromeInsets';
 import { AdBanner } from '@/src/components/ads/AdBanner';
 import { WebHome } from '@/src/components/marketing/WebHome';
 import { DeckOptionCard } from '@/src/components/ui/DeckOptionCard';
@@ -56,7 +56,7 @@ function TopIcon({
 }
 
 export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
+  const insets = useAppChromeInsets();
   const layout = useResponsiveLayout();
   const displayName = useSettingsStore((s) => s.displayName);
   const setSelectedGame = useGameCatalogStore((s) => s.setSelectedGame);
@@ -156,7 +156,7 @@ export default function HomeScreen() {
 
       <View
         style={[
-          styles.tabBarWrap,
+          styles.bottomStack,
           {
             paddingBottom: Math.max(insets.bottom, 10) + 4,
             paddingLeft: Math.max(insets.left, 14),
@@ -164,41 +164,46 @@ export default function HomeScreen() {
           },
         ]}
       >
-        <Animated.Text
-          entering={FadeIn.delay(280).duration(360)}
-          style={styles.sectionLabel}
-        >
-          Select game
-        </Animated.Text>
-        <View style={styles.cardRow}>
-          {CATALOG_GAMES.map((g, i) => (
-            <Animated.View
-              key={g.id}
-              entering={FadeInUp.delay(340 + i * 120)
-                .duration(480)
-                .easing(Easing.out(Easing.cubic))}
-              style={styles.gameCardSlot}
-            >
-              <DeckOptionCard
-                label={g.title}
-                sub={g.blurb}
-                glyph={g.glyph}
-                peekCards={g.peekCards}
-                primary={i === 0}
-                prominent
-                onPress={() => openGame(g.id)}
-                style={styles.gameCard}
-              />
-            </Animated.View>
-          ))}
+        <View style={styles.gamesBlock}>
+          <Animated.Text
+            entering={FadeIn.delay(280).duration(360)}
+            style={styles.sectionLabel}
+          >
+            Select game
+          </Animated.Text>
+          <View style={styles.cardRow}>
+            {CATALOG_GAMES.map((g, i) => (
+              <Animated.View
+                key={g.id}
+                entering={FadeInUp.delay(340 + i * 120)
+                  .duration(480)
+                  .easing(Easing.out(Easing.cubic))}
+                style={styles.gameCardSlot}
+              >
+                <DeckOptionCard
+                  label={g.title}
+                  sub={g.blurb}
+                  glyph={g.glyph}
+                  peekCards={g.peekCards}
+                  primary={i === 0}
+                  prominent
+                  onPress={() => openGame(g.id)}
+                  style={styles.gameCard}
+                />
+              </Animated.View>
+            ))}
+          </View>
         </View>
-        <Animated.Text
-          entering={FadeIn.delay(560).duration(360)}
-          style={styles.disclaimer}
-        >
-          No gambling · No betting · No real money
-        </Animated.Text>
-        <AdBanner />
+
+        <View style={styles.homeFooter}>
+          <Animated.Text
+            entering={FadeIn.delay(560).duration(360)}
+            style={styles.disclaimer}
+          >
+            No gambling · No betting · No real money
+          </Animated.Text>
+          <AdBanner />
+        </View>
       </View>
     </View>
   );
@@ -277,12 +282,23 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     textAlign: 'center',
   },
-  tabBarWrap: {
+  bottomStack: {
     flex: 1,
     zIndex: 3,
     marginTop: 6,
-    minHeight: 220,
     justifyContent: 'flex-end',
+  },
+  gamesBlock: {
+    flexShrink: 1,
+    justifyContent: 'flex-end',
+  },
+  homeFooter: {
+    flexShrink: 0,
+    zIndex: 6,
+    elevation: 12,
+    marginTop: 10,
+    paddingTop: 4,
+    backgroundColor: '#030A08',
   },
   sectionLabel: {
     color: ART_DECO_PALETTE.goldLight,
@@ -298,25 +314,28 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     justifyContent: 'center',
     gap: 12,
-    flex: 1,
-    maxHeight: 210,
+    height: 168,
   },
   gameCardSlot: {
     flex: 1,
     minWidth: 0,
     maxWidth: '50%',
+    height: 168,
   },
   gameCard: {
-    flex: 1,
     width: '100%',
-    minHeight: 178,
+    height: 168,
+    minHeight: 168,
+    maxHeight: 168,
+    flex: 0,
   },
   disclaimer: {
     textAlign: 'center',
     color: 'rgba(138,154,148,0.85)',
     fontSize: 10,
     letterSpacing: 0.4,
-    marginTop: 8,
+    marginBottom: 4,
+    backgroundColor: '#030A08',
   },
   pressed: {
     opacity: 0.88,

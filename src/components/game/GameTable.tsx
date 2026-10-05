@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { GameState, TrickPlay } from '../../game/types';
 import { GAME_THEME } from '../../constants/gameTheme';
@@ -9,14 +9,17 @@ import { LayoutDebug } from '../game-ui/LayoutDebug';
 import { PlayerSeat } from './PlayerSeat';
 import { TrickPlayCard, clearThrowAnimationMemory, type SeatOrigin } from './TrickPlayCard';
 import { TurnSpaceTimer } from './TurnSpaceTimer';
+import type { CollectTarget } from '@/src/game/seatOrigin';
+
+export type { CollectTarget };
 
 interface GameTableProps {
   state: GameState;
   localPlayerId: string | null;
   hideBottomSeat?: boolean;
   visiblePlays?: TrickPlay[] | null;
-  /** When set, trick cards slide to this seat instead of a full-screen banner. */
-  collectTo?: SeatOrigin | null;
+  /** When set, trick cards slide here (collector seat or discard deck). */
+  collectTo?: CollectTarget | null;
   onCollectDone?: () => void;
   /** Seconds left on the active turn clock (shown on that player's card space). */
   turnSeconds?: number | null;
@@ -29,6 +32,8 @@ interface GameTableProps {
   faceDownPlays?: boolean;
   /** Slam badge + voice: Thulla game vs Bluff */
   slamStyle?: 'thulla' | 'bluff';
+  /** Card id flying from the local hand (offline-style throw). */
+  handThrowCardId?: string | null;
 }
 
 function seatForRelative(
@@ -75,6 +80,7 @@ export function GameTable({
   waitingRoom = false,
   faceDownPlays = false,
   slamStyle = 'thulla',
+  handThrowCardId = null,
 }: GameTableProps) {
   const {
     onSceneLayout,
@@ -112,11 +118,18 @@ export function GameTable({
   );
 
   const plays = visiblePlays ?? state.trick.plays;
+  const handCenterX = hand.left + hand.width / 2;
+  const handCenterY = hand.top + hand.height * 0.45;
+  const playsSig = plays.map((p) => `${p.playerId}:${p.card.id}`).join('|');
+  const prevPlaysSig = useRef(playsSig);
 
-  // Next trick can animate fresh throws
+  // Clear throw dedup only when a trick actually leaves the table — not on poll gaps.
   useEffect(() => {
-    if (plays.length === 0) clearThrowAnimationMemory();
-  }, [plays.length]);
+    if (prevPlaysSig.current !== '' && playsSig === '') {
+      clearThrowAnimationMemory();
+    }
+    prevPlaysSig.current = playsSig;
+  }, [playsSig]);
 
   const showLeft = left && left.id !== bottom.id;
   const showTop = top && top.id !== bottom.id && top.id !== left?.id;
@@ -293,11 +306,28 @@ export function GameTable({
                 cardHeight={trickCard.h}
                 faceDown={faceDownPlays}
                 slamStyle={slamStyle}
+                fromHandThrow={
+                  Boolean(handThrowCardId) &&
+                  play.card.id === handThrowCardId &&
+                  origin === 'bottom'
+                }
                 collectX={
-                  collectTo ? anchors[collectTo].x - trick[origin].x : undefined
+                  collectTo === 'deck'
+                    ? deck.centerX - trick[origin].x
+                    : collectTo === 'hand'
+                      ? handCenterX - trick[origin].x
+                      : collectTo
+                        ? anchors[collectTo].x - trick[origin].x
+                        : undefined
                 }
                 collectY={
-                  collectTo ? anchors[collectTo].y - trick[origin].y : undefined
+                  collectTo === 'deck'
+                    ? deck.centerY - trick[origin].y
+                    : collectTo === 'hand'
+                      ? handCenterY - trick[origin].y
+                      : collectTo
+                        ? anchors[collectTo].y - trick[origin].y
+                        : undefined
                 }
                 onCollected={onCollectDone}
               />

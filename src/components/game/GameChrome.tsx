@@ -13,7 +13,7 @@ import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { ART_DECO_PALETTE } from '../../constants/gameAssets';
 import { GAME_THEME } from '../../constants/gameTheme';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTableChromeInsets } from '@/src/hooks/useTableChromeInsets';
 import { useRoomLayout } from '../../hooks/useRoomLayout';
 import { triggerHaptic } from '../../services/haptics';
 import { useDialogStore } from '../../store/dialogStore';
@@ -229,14 +229,28 @@ export function ActionCluster({
       disabled={!onAuto}
       style={[
         styles.autoBtn,
-        { width: size, height: size, borderRadius: Math.round(size * 0.22) },
+        {
+          minWidth: active ? 72 : size,
+          height: size,
+          paddingHorizontal: active ? 8 : 4,
+          borderRadius: Math.round(size * 0.22),
+        },
         active && styles.autoBtnOn,
       ]}
-      accessibilityLabel={active ? 'Auto play on — tap to rejoin' : 'Enable auto play'}
+      accessibilityLabel={
+        active
+          ? 'Resume — stop auto play and take control'
+          : 'Auto play — game plays for you'
+      }
       accessibilityState={{ selected: !!active }}
     >
-      <Text style={[styles.autoText, active && styles.autoTextOn]}>
-        {active ? 'ON' : 'Auto'}
+      <Text
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.85}
+        style={[styles.autoText, active && styles.autoTextOn]}
+      >
+        {active ? 'RESUME' : 'AUTO'}
       </Text>
     </Pressable>
   );
@@ -304,7 +318,7 @@ export function GameChrome({
   autoActive?: boolean;
 }) {
   const room = useRoomLayout();
-  const insets = useSafeAreaInsets();
+  const insets = useTableChromeInsets();
   const { width: screenW } = useWindowDimensions();
   const [panel, setPanel] = useState<'chat' | 'emoji' | null>(null);
   const [bubble, setBubble] = useState<string | null>(null);
@@ -367,12 +381,26 @@ export function GameChrome({
           <Text style={styles.exitText}>Quit</Text>
         </Pressable>
 
-        <View style={styles.topCenter} pointerEvents="none">
+        <View
+          style={styles.topCenter}
+          pointerEvents={autoActive && onAuto ? 'box-none' : 'none'}
+        >
           {autoActive ? (
-            <View style={styles.autoHintPill}>
+            <Pressable
+              onPress={onAuto}
+              disabled={!onAuto}
+              style={({ pressed }) => [
+                styles.autoHintPill,
+                pressed && styles.autoHintPillPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Resume playing — stop auto play"
+            >
               <View style={styles.autoHintDot} />
-              <Text style={styles.autoHintText}>AUTO PLAY ON · tap ON to join</Text>
-            </View>
+              <Text style={styles.autoHintText} numberOfLines={1}>
+                Playing for you · tap RESUME
+              </Text>
+            </Pressable>
           ) : statusLine ? (
             <Text style={styles.statusHint} numberOfLines={1}>
               {statusLine}
@@ -506,17 +534,21 @@ const styles = StyleSheet.create({
   autoHintPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
     backgroundColor: 'rgba(214,175,85,0.28)',
     borderWidth: 1.5,
     borderColor: ART_DECO_PALETTE.gold,
   },
+  autoHintPillPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
   autoHintDot: {
-    width: 7,
-    height: 7,
+    width: 8,
+    height: 8,
     borderRadius: 4,
     backgroundColor: ART_DECO_PALETTE.gold,
   },
@@ -524,7 +556,7 @@ const styles = StyleSheet.create({
     color: ART_DECO_PALETTE.goldLight,
     fontWeight: '800',
     fontSize: 11,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   statusHint: {
     color: 'rgba(247,241,227,0.7)',
@@ -712,9 +744,9 @@ const styles = StyleSheet.create({
   },
   autoText: {
     color: ART_DECO_PALETTE.gold,
-    fontWeight: '800',
-    fontSize: 10,
-    letterSpacing: 0.2,
+    fontWeight: '900',
+    fontSize: 11,
+    letterSpacing: 0.4,
   },
   autoTextOn: {
     color: '#1A120C',

@@ -12,7 +12,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAppChromeInsets } from '../../hooks/useAppChromeInsets';
 import { ART_DECO_PALETTE } from '../../constants/gameAssets';
 import { COLORS, FONTS } from '../../constants/theme';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
@@ -72,10 +72,10 @@ export function AppButton({
     <Pressable
       disabled={disabled}
       hitSlop={isGhost ? 10 : 6}
-      onPress={async () => {
+      onPress={() => {
         Keyboard.dismiss();
-        await playSfx('click');
-        await triggerHaptic('light');
+        void playSfx('click');
+        void triggerHaptic('light');
         onPress();
       }}
       style={({ pressed }) => [
@@ -155,7 +155,7 @@ export function Screen({
   /** Scroll content so landscape pages are not clipped. Default true. */
   scroll?: boolean;
 }) {
-  const insets = useSafeAreaInsets();
+  const insets = useAppChromeInsets();
   const layout = useResponsiveLayout();
 
   const pad = {

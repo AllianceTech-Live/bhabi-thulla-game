@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import Animated, {
   Easing,
   interpolate,
@@ -8,6 +8,7 @@ import Animated, {
   useSharedValue,
   withDelay,
   withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import type { TrickPlay } from '../../game/types';
@@ -21,7 +22,7 @@ export type SeatOrigin = 'bottom' | 'top' | 'left' | 'right';
 
 /** Survive optimistic→server remounts without replaying the same throw. */
 const thrownOnce = new Map<string, number>();
-const THROW_DEDUP_MS = 4000;
+const THROW_DEDUP_MS = 8000;
 
 function claimThrowAnimation(playKey: string): boolean {
   const now = Date.now();
@@ -41,12 +42,13 @@ export function clearThrowAnimationMemory() {
   thrownOnce.clear();
 }
 
+/** Start offsets — from each seat toward the center pile. */
 const ORIGIN_OFFSET: Record<SeatOrigin, { x: number; y: number; rot: number }> =
   {
-    bottom: { x: 0, y: 130, rot: -8 },
-    top: { x: 0, y: -120, rot: 8 },
-    left: { x: -110, y: 20, rot: -14 },
-    right: { x: 110, y: 20, rot: 14 },
+    bottom: { x: 0, y: 118, rot: -8 },
+    top: { x: 0, y: -150, rot: 10 },
+    left: { x: -140, y: 28, rot: -18 },
+    right: { x: 140, y: 28, rot: 18 },
   };
 
 interface TrickPlayCardProps {
@@ -61,12 +63,13 @@ interface TrickPlayCardProps {
   onCollected?: () => void;
   faceDown?: boolean;
   slamStyle?: 'thulla' | 'bluff';
+  /** Your card — continuous lift from hand (matches offline). */
+  fromHandThrow?: boolean;
 }
 
 /**
- * One throw animation per card, ever, for this trick.
- * Changing `latest` / `total` must NOT restart the flight (that made both
- * cards re-throw when the second player played).
+ * One throw animation per card for this trick.
+ * Flight includes a real flip (back → face) so it reads like a table throw.
  */
 export function TrickPlayCard({
   play,
@@ -80,17 +83,25 @@ export function TrickPlayCard({
   onCollected,
   faceDown = false,
   slamStyle = 'thulla',
+  fromHandThrow = false,
 }: TrickPlayCardProps) {
   const collecting = collectX != null && collectY != null;
   const latest = index === total - 1;
   const isThulla = play.isThulla;
   const playKey = `${play.playerId}:${play.card.id}`;
-  const mayAnimate = useRef(claimThrowAnimation(playKey)).current;
+  const mayAnimateRef = useRef<boolean | null>(null);
+  if (mayAnimateRef.current === null) {
+    mayAnimateRef.current = claimThrowAnimation(playKey);
+  }
+  const mayAnimate = mayAnimateRef.current;
   const throwStarted = useRef(false);
+  const slamRan = useRef(false);
 
   const progress = useSharedValue(collecting || !mayAnimate ? 1 : 0);
   const settle = useSharedValue(latest || isThulla ? 1 : 0);
-  const slam = useSharedValue(collecting && isThulla ? 1 : mayAnimate ? 0 : isThulla ? 1 : 0);
+  const slam = useSharedValue(
+    collecting && isThulla ? 1 : mayAnimate ? 0 : isThulla ? 1 : 0
+  );
   const fly = useSharedValue(0);
 
   const doneRef = useRef(onCollected);
@@ -99,15 +110,23 @@ export function TrickPlayCard({
     doneRef.current?.();
   }, []);
   const shoutSlam = useCallback(() => {
-    void playSfx(slamStyle === 'bluff' ? 'bluff' : 'thulla');
+    // Voice is played by the game screen when thullaMoment starts so every
+    // client hears it — not only the device that animated the throw.
+    if (slamStyle === 'bluff') void playSfx('bluff');
   }, [slamStyle]);
   const hitTable = useCallback(() => {
     void playSfx('card_play');
   }, []);
 
-  const start = ORIGIN_OFFSET[origin];
+  const start = fromHandThrow
+    ? { x: 0, y: 44, rot: -5 }
+    : ORIGIN_OFFSET[origin];
   const badgeLabel = slamStyle === 'bluff' ? 'BLUFF!' : 'THULLA!';
   const throwMs = GAME_TIMING.cardPlayAnimMs;
+  const w = cardWidth ?? 66;
+  const h = cardHeight ?? 88;
+  const flipThrow =
+    mayAnimate && !fromHandThrow && origin !== 'bottom' && !faceDown;
 
   // Throw flight — mount once only. Never re-run when `latest` flips.
   useEffect(() => {
@@ -121,14 +140,30 @@ export function TrickPlayCard({
     }
     throwStarted.current = true;
     progress.value = 0;
-    progress.value = withTiming(1, {
-      duration: throwMs,
-      easing: Easing.bezier(0.22, 0.9, 0.28, 1),
-    });
+    if (fromHandThrow) {
+      progress.value = withSpring(
+        1,
+        {
+          damping: 22,
+          stiffness: 128,
+          mass: 0.82,
+          overshootClamping: true,
+        },
+        (finished) => {
+          if (finished && !isThulla) {
+            runOnJS(hitTable)();
+          }
+        }
+      );
+    } else {
+      progress.value = withTiming(1, {
+        duration: throwMs,
+        easing: Easing.bezier(0.22, 0.9, 0.28, 1),
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot
   }, []);
 
-  // Soft highlight when this is the newest card — no flight restart
   useEffect(() => {
     if (collecting) return;
     settle.value = withTiming(latest || isThulla ? 1 : 0, {
@@ -137,15 +172,16 @@ export function TrickPlayCard({
     });
   }, [collecting, isThulla, latest, settle]);
 
-  // Thulla slam — one-shot with the throw, not when latest changes
   useEffect(() => {
-    if (!mayAnimate || !isThulla || collecting) {
-      if (isThulla) slam.value = collecting || !mayAnimate ? 1 : slam.value;
+    if (!isThulla || collecting || slamRan.current) {
+      if (isThulla && collecting) slam.value = 1;
       return;
     }
-    if (throwStarted.current && slam.value > 0) return;
+    slamRan.current = true;
 
-    const liftDelay = Math.round(throwMs * 0.55);
+    const liftDelay = mayAnimate
+      ? Math.round(throwMs * 0.55)
+      : 120;
     slam.value = 0;
     slam.value = withDelay(
       liftDelay,
@@ -169,8 +205,7 @@ export function TrickPlayCard({
       clearTimeout(shoutTimer);
       clearTimeout(hitTimer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot
-  }, []);
+  }, [collecting, hitTable, isThulla, mayAnimate, shoutSlam, slam, throwMs]);
 
   useEffect(() => {
     if (!collecting) {
@@ -198,9 +233,11 @@ export function TrickPlayCard({
     const s = slam.value;
     const dx = collectX ?? 0;
     const dy = collectY ?? 0;
-    const arc = interpolate(t, [0, 0.45, 1], [0, -42, 0]);
+    const arc = fromHandThrow
+      ? interpolate(t, [0, 0.35, 1], [0, -38, 0])
+      : interpolate(t, [0, 0.4, 1], [0, -56, 0]);
     const bounce = !isThulla
-      ? interpolate(t, [0, 0.82, 0.92, 1], [0, 0, 6, 0])
+      ? interpolate(t, [0, 0.8, 0.9, 1], [0, 0, 5, 0])
       : 0;
     const slamY = isThulla
       ? interpolate(s, [0, 0.42, 0.78, 0.9, 1], [0, -110, 22, -4, 0])
@@ -208,14 +245,24 @@ export function TrickPlayCard({
     const slamScale = isThulla
       ? interpolate(s, [0, 0.42, 0.78, 1], [1, 2.05, 0.9, 1])
       : 1;
-    const throwScale = interpolate(t, [0, 0.35, 0.85, 1], [1.12, 1.06, 0.97, 1]);
-    const rot = interpolate(t, [0, 0.55, 1], [start.rot, start.rot * 0.35, 0]);
+    const throwScale = fromHandThrow
+      ? interpolate(t, [0, 0.3, 1], [1, 1.04, 1])
+      : interpolate(t, [0, 0.25, 0.7, 1], [0.92, 1.08, 1.02, 1]);
+    // Wrist twist into the table
+    const rotZ = interpolate(t, [0, 0.45, 1], [start.rot, start.rot * 0.25, 0]);
+    // Full flip for opponents; local throw keeps the face they selected
+    const flipY = flipThrow
+      ? interpolate(t, [0, 0.55, 1], [180, 90, 0])
+      : 0;
 
     return {
       opacity: collecting
         ? interpolate(gone, [0, 0.72, 1], [1, 1, 0])
-        : interpolate(t, [0, 0.12, 1], [0, 1, 1]),
+        : fromHandThrow
+          ? 1
+          : interpolate(t, [0, 0.08, 1], [0, 1, 1]),
       transform: [
+        { perspective: 900 },
         {
           translateX: interpolate(t, [0, 1], [start.x, 0]) + dx * gone,
         },
@@ -227,10 +274,28 @@ export function TrickPlayCard({
             slamY +
             dy * gone,
         },
-        { rotate: `${rot}deg` },
+        { rotateZ: `${rotZ}deg` },
+        { rotateY: `${flipY}deg` },
         { scale: throwScale * slamScale },
       ],
     };
+  });
+
+  // Swap faces at the flip midpoint (reliable vs backfaceVisibility on Android)
+  const faceStyle = useAnimatedStyle(() => {
+    if (faceDown || !mayAnimate) {
+      return { opacity: faceDown ? 0 : 1 };
+    }
+    if (!flipThrow) return { opacity: 1 };
+    const flipY = interpolate(progress.value, [0, 0.55, 1], [180, 90, 0]);
+    return { opacity: flipY < 90 ? 1 : 0 };
+  });
+
+  const backStyle = useAnimatedStyle(() => {
+    if (faceDown) return { opacity: 1 };
+    if (!mayAnimate || !flipThrow) return { opacity: 0 };
+    const flipY = interpolate(progress.value, [0, 0.55, 1], [180, 90, 0]);
+    return { opacity: flipY >= 90 ? 1 : 0 };
   });
 
   const badgeStyle = useAnimatedStyle(() => {
@@ -254,6 +319,8 @@ export function TrickPlayCard({
         styles.wrap,
         style,
         {
+          width: w,
+          height: h,
           zIndex: collecting
             ? 40 + index
             : isThulla
@@ -266,11 +333,14 @@ export function TrickPlayCard({
         isThulla && !collecting && styles.thullaGlow,
       ]}
     >
-      {faceDown ? (
-        <CardBackView width={cardWidth ?? 66} height={cardHeight ?? 88} />
-      ) : (
-        <PlayingCard card={play.card} width={cardWidth} height={cardHeight} />
-      )}
+      <Animated.View style={[styles.face, backStyle]} pointerEvents="none">
+        <CardBackView width={w} height={h} />
+      </Animated.View>
+      {!faceDown ? (
+        <Animated.View style={[styles.face, faceStyle]} pointerEvents="none">
+          <PlayingCard card={play.card} width={w} height={h} />
+        </Animated.View>
+      ) : null}
       {isThulla && !faceDown && latest ? (
         <Animated.View style={[styles.badge, badgeStyle]} pointerEvents="none">
           <Text style={styles.badgeText}>{badgeLabel}</Text>
@@ -283,6 +353,12 @@ export function TrickPlayCard({
 const styles = StyleSheet.create({
   wrap: {
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  face: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   lifted: {
     shadowColor: '#F0D58A',

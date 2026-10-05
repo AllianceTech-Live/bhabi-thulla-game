@@ -138,15 +138,23 @@ export function useTableBounds() {
   }, [table]);
 
   const deck = useMemo(() => {
-    const w = table.shortSide * 0.12;
+    const w = Math.max(36, table.shortSide * 0.11);
     const h = w * (88 / 66);
+    // Outside the felt — bottom-right discard / out-of-play pile
+    const left = Math.min(
+      Math.max(table.right + 4, scene.w - w - 12),
+      scene.w - w - 4
+    );
+    const top = Math.min(table.bottom - h * 0.55, scene.h - h - 10);
     return {
-      left: table.right - w * 1.55,
-      top: table.bottom - h * 1.35,
+      left,
+      top,
       width: w,
       height: h,
+      centerX: left + w / 2,
+      centerY: top + h / 2,
     };
-  }, [table]);
+  }, [table, scene.w, scene.h]);
 
   const frameSize = {
     default: Math.max(44, Math.min(64, table.shortSide * 0.22)),

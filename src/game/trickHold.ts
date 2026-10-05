@@ -28,10 +28,58 @@ export function tableVisiblePlays(
   const live = state.trick.plays;
   const held = heldTrickPlays;
   if (held && held.length > 0) {
+    // Prefer the longer client hold so optimistic throws are not replaced by a
+    // shorter stale poll (that remounted the card and replayed the throw).
     if (held.length >= live.length) return held;
   }
   if (live.length > 0) return live;
   return [];
+}
+
+/** Prefer the longer in-flight hold so stale online polls do not shrink the pile. */
+export function mergeHeldTrickPlays(
+  current: TrickPlay[] | null,
+  incoming: TrickPlay[] | null | undefined
+): TrickPlay[] | null {
+  if (!incoming || incoming.length === 0) {
+    return current && current.length > 0 ? current : null;
+  }
+  if (current && current.length > 0) {
+    if (
+      current.length > incoming.length &&
+      playsContainAll(current, incoming)
+    ) {
+      return current;
+    }
+    if (trickPlaysSignature(current) === trickPlaysSignature(incoming)) {
+      const thullaByKey = new Map<string, boolean>(
+        incoming.map((p) => [`${p.playerId}:${p.card.id}`, p.isThulla])
+      );
+      let changed = false;
+      const merged = current.map((p) => {
+        const key = `${p.playerId}:${p.card.id}`;
+        const flag = thullaByKey.get(key);
+        if (flag != null && p.isThulla !== flag) {
+          changed = true;
+          return { ...p, isThulla: flag };
+        }
+        return p;
+      });
+      return changed ? merged : current;
+    }
+  }
+  return incoming;
+}
+
+/** True when `longer` contains every play in `shorter` (by player+card). */
+export function playsContainAll(
+  longer: TrickPlay[] | null | undefined,
+  shorter: TrickPlay[] | null | undefined
+): boolean {
+  if (!shorter || shorter.length === 0) return true;
+  if (!longer || longer.length < shorter.length) return false;
+  const keys = new Set(longer.map((p) => `${p.playerId}:${p.card.id}`));
+  return shorter.every((p) => keys.has(`${p.playerId}:${p.card.id}`));
 }
 
 /**
@@ -123,14 +171,26 @@ export function buildThullaMomentFromStates(
   next: GameState,
   completed: TrickPlay[]
 ): ThullaMoment | null {
-  // Only events from this update — never scan the whole history (that
-  // falsely re-triggers Thulla and locks the table forever).
   const prevEventCount = prev?.events.length ?? 0;
   const fresh = next.events.slice(prevEventCount);
-  const thullaEvent = [...fresh].reverse().find((e) => e.type === 'thulla');
+  let thullaEvent = [...fresh].reverse().find((e) => e.type === 'thulla');
+  // Poll may skip the exact transition — still show Thulla for everyone.
+  if (!thullaEvent && completed.some((p) => p.isThulla)) {
+    thullaEvent = [...next.events].reverse().find((e) => e.type === 'thulla');
+  }
   if (!thullaEvent) return null;
 
-  const thullaPlay = [...completed].reverse().find((p) => p.isThulla);
+  let thullaPlay = [...completed].reverse().find((p) => p.isThulla);
+  if (!thullaPlay) {
+    const cardId = String(thullaEvent.payload?.cardId ?? '');
+    const playerId = String(thullaEvent.payload?.playerId ?? '');
+    thullaPlay = completed.find(
+      (p) => p.playerId === playerId && p.card.id === cardId
+    );
+    if (thullaPlay) {
+      thullaPlay = { ...thullaPlay, isThulla: true };
+    }
+  }
   const leadSuit =
     prev?.trick.leadSuit ??
     completed.find((p) => !p.isThulla)?.card.suit ??
@@ -142,7 +202,11 @@ export function buildThullaMomentFromStates(
   const thullaPlayer = next.players.find((p) => p.id === thullaPlay.playerId);
 
   return {
-    plays: completed,
+    plays: completed.map((p) =>
+      p.playerId === thullaPlay!.playerId && p.card.id === thullaPlay!.card.id
+        ? { ...p, isThulla: true }
+        : p
+    ),
     leadSuit,
     thullaPlayerId: thullaPlay.playerId,
     thullaPlayerName: thullaPlayer?.name ?? 'Player',
@@ -150,6 +214,13 @@ export function buildThullaMomentFromStates(
     collectorName: collector?.name ?? 'Player',
     thullaCard: thullaPlay.card,
   };
+}
+
+function hasFreshThullaEvent(prev: GameState | null, next: GameState): boolean {
+  if (!prev) return false;
+  const prevEventCount = prev.events.length;
+  if (prevEventCount >= next.events.length) return false;
+  return next.events.slice(prevEventCount).some((e) => e.type === 'thulla');
 }
 
 function trickJustResolved(prev: GameState | null, next: GameState): boolean {
@@ -174,7 +245,10 @@ export function nextHeldTrickPlays(
     return { held: next.trick.plays, thulla: null, revive: false };
   }
 
-  if (trickJustResolved(prev, next)) {
+  const justResolved = trickJustResolved(prev, next);
+  const freshThulla = hasFreshThullaEvent(prev, next);
+
+  if (justResolved || freshThulla) {
     const completed = rebuildCompletedTrick(prev, next);
     if (completed && completed.length > 0) {
       const thulla = buildThullaMomentFromStates(prev, next, completed);

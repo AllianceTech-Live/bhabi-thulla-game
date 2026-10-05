@@ -11,6 +11,7 @@ type UseTurnTimerArgs = {
 
 /**
  * Counts down every turn for seat UI. Timeout only when enableTimeout.
+ * enableTimeout is read via ref so toggling Auto does not restart the clock.
  */
 export function useTurnTimer({
   turnKey,
@@ -22,6 +23,8 @@ export function useTurnTimer({
   const [progress, setProgress] = useState(1);
   const onTimeoutRef = useRef(onTimeout);
   onTimeoutRef.current = onTimeout;
+  const enableTimeoutRef = useRef(enableTimeout);
+  enableTimeoutRef.current = enableTimeout;
   const firedKey = useRef<string | null>(null);
 
   useEffect(() => {
@@ -45,7 +48,7 @@ export function useTurnTimer({
         setSecondsLeft(0);
         setProgress(0);
         if (
-          enableTimeout &&
+          enableTimeoutRef.current &&
           onTimeoutRef.current &&
           firedKey.current !== turnKey
         ) {
@@ -58,7 +61,7 @@ export function useTurnTimer({
     }, 100);
 
     return () => clearInterval(id);
-  }, [turnKey, durationMs, enableTimeout]);
+  }, [turnKey, durationMs]);
 
   return {
     secondsLeft: turnKey ? secondsLeft : null,

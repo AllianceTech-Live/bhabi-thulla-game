@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, TurboModuleRegistry } from 'react-native';
 import type { InterstitialAd as InterstitialAdType } from 'react-native-google-mobile-ads';
 
 /**
@@ -30,8 +30,19 @@ export const AD_UNITS = {
   ),
 } as const;
 
+let nativeAdsCached: boolean | null = null;
+
+/** True only on Android builds that include react-native-google-mobile-ads (not Expo Go). */
 export function adsSupported(): boolean {
-  return Platform.OS === 'android';
+  if (Platform.OS !== 'android') return false;
+  if (nativeAdsCached !== null) return nativeAdsCached;
+  try {
+    nativeAdsCached =
+      TurboModuleRegistry.get('RNGoogleMobileAdsModule') != null;
+  } catch {
+    nativeAdsCached = false;
+  }
+  return nativeAdsCached;
 }
 
 export function canShowAd(

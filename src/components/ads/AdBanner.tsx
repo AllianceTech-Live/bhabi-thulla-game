@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { AD_UNITS, adsSupported, canShowAd, initAds } from '@/src/services/ads';
 
 type AdBannerProps = {
@@ -26,22 +26,26 @@ export function AdBanner({ isActiveTurn = false }: AdBannerProps) {
     };
   }, [isActiveTurn]);
 
-  if (Platform.OS !== 'android' || !ready) return null;
+  if (!adsSupported() || !ready) return null;
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { BannerAd, BannerAdSize } = require('react-native-google-mobile-ads') as typeof import('react-native-google-mobile-ads');
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { BannerAd, BannerAdSize } = require('react-native-google-mobile-ads') as typeof import('react-native-google-mobile-ads');
 
-  return (
-    <View style={styles.wrap} pointerEvents="box-none">
-      <BannerAd
-        unitId={AD_UNITS.banner}
-        size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-        requestOptions={{
-          requestNonPersonalizedAdsOnly: true,
-        }}
-      />
-    </View>
-  );
+    return (
+      <View style={styles.wrap} pointerEvents="box-none">
+        <BannerAd
+          unitId={AD_UNITS.banner}
+          size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+          requestOptions={{
+            requestNonPersonalizedAdsOnly: true,
+          }}
+        />
+      </View>
+    );
+  } catch {
+    return null;
+  }
 }
 
 const styles = StyleSheet.create({

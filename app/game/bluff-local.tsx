@@ -6,7 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTableChromeInsets } from '@/src/hooks/useTableChromeInsets';
 import { GameChrome } from '@/src/components/game/GameChrome';
 import { GameTable } from '@/src/components/game/GameTable';
 import { DealAnimation } from '@/src/components/game/DealAnimation';
@@ -23,6 +23,7 @@ import type { Card, GameState, Rank, TrickPlay } from '@/src/game/types';
 import { RANKS } from '@/src/game/types';
 import { useRoomLayout } from '@/src/hooks/useRoomLayout';
 import { useTableMusic } from '@/src/hooks/useTableMusic';
+import { useAutoPlayTurn } from '@/src/hooks/useAutoPlayTurn';
 import { useTurnTimer } from '@/src/hooks/useTurnTimer';
 import { playSfx, stopMusic } from '@/src/services/audio';
 import { confirmQuitGame } from '@/src/services/quitGame';
@@ -96,7 +97,7 @@ function toTableState(bluff: BluffState): GameState {
 }
 
 export default function BluffLocalScreen() {
-  const insets = useSafeAreaInsets();
+  const insets = useTableChromeInsets();
   const room = useRoomLayout();
   const state = useBluffStore((s) => s.state);
   const localHumanIds = useBluffStore((s) => s.localHumanIds);
@@ -117,8 +118,10 @@ export default function BluffLocalScreen() {
   const [claimSheetOpen, setClaimSheetOpen] = useState(false);
   const [sheetRank, setSheetRank] = useState<Rank | null>(null);
   const [dealing, setDealing] = useState(true);
+  const [autoPlay, setAutoPlay] = useState(false);
   const eventsLen = useRef(0);
   const dealShownForGame = useRef<string | null>(null);
+  const autoPlayCurrentTurn = useBluffStore((s) => s.autoPlayCurrentTurn);
 
   // Hot-seat: dock the human whose turn it is when multiple locals
   const meId =
@@ -131,17 +134,17 @@ export default function BluffLocalScreen() {
   const turnPlayer = state?.players.find(
     (p) => p.id === state.currentTurnPlayerId
   );
-  const canInteract =
-    Boolean(
-      state &&
-        !dealing &&
-        isMyTurn &&
-        me &&
-        me.finishOrder == null &&
-        !collectTo &&
-        !revealFaceUp &&
-        state.phase === 'playing'
-    );
+  const myTurnReady = Boolean(
+    state &&
+      !dealing &&
+      isMyTurn &&
+      me &&
+      me.finishOrder == null &&
+      !collectTo &&
+      !revealFaceUp &&
+      state.phase === 'playing'
+  );
+  const canInteract = myTurnReady && !autoPlay;
 
   const turnKey =
     state &&
@@ -156,7 +159,23 @@ export default function BluffLocalScreen() {
   const { secondsLeft, progress: turnProgress } = useTurnTimer({
     turnKey,
     durationMs: GAME_TIMING.turnTimeoutMs,
-    enableTimeout: false,
+    enableTimeout: myTurnReady && !autoPlay,
+    onTimeout: () => setAutoPlay(true),
+  });
+
+  useEffect(() => {
+    if (!state || state.phase === 'game_complete' || dealing) {
+      setAutoPlay(false);
+    }
+  }, [state?.phase, dealing, state]);
+
+  useAutoPlayTurn({
+    autoPlay,
+    myTurnReady,
+    turnKey,
+    playOnce: () => {
+      autoPlayCurrentTurn();
+    },
   });
 
   useEffect(() => {
@@ -316,7 +335,6 @@ export default function BluffLocalScreen() {
       setClaimSheetOpen(false);
       setSheetRank(null);
       if (ok) {
-        void playSfx('card_throw');
         void triggerHaptic('light');
       } else {
         void playSfx('error');
@@ -492,9 +510,7 @@ export default function BluffLocalScreen() {
               leadSuit={null}
               selectedId={selectedCardIds[selectedCardIds.length - 1] ?? null}
               selectedIds={selectedCardIds}
-              interactive={
-                !!isMyTurn && !collectTo && !revealFaceUp && !claimSheetOpen
-              }
+              interactive={canInteract && !claimSheetOpen}
               compact={room.compactHand}
               onSelect={(c) => {
                 toggleCard(c.id);
@@ -504,12 +520,7 @@ export default function BluffLocalScreen() {
           </View>
         )}
 
-        {!dealing &&
-        isMyTurn &&
-        me &&
-        me.finishOrder == null &&
-        !collectTo &&
-        !revealFaceUp ? (
+        {canInteract ? (
           <View
             style={[
               styles.actionBar,
@@ -648,19 +659,23 @@ export default function BluffLocalScreen() {
               ? 'DEALING…'
               : collectTo || revealFaceUp
               ? 'COLLECTING…'
-              : claimSheetOpen
-                ? 'CLAIM RANK…'
-                : isMyTurn
-                ? canCall
-                  ? 'YOUR TURN · CALL / PASS / THROW'
-                  : canPass
-                    ? 'YOUR TURN · PASS OR THROW'
-                    : 'YOUR TURN · THROW'
-                : turnPlayer
-                  ? `${turnPlayer.name}'s turn`
-                  : 'Waiting…'
+              : autoPlay
+                ? 'AUTO PLAY ON'
+                : claimSheetOpen
+                  ? 'CLAIM RANK…'
+                  : isMyTurn
+                  ? canCall
+                    ? 'YOUR TURN · CALL / PASS / THROW'
+                    : canPass
+                      ? 'YOUR TURN · PASS OR THROW'
+                      : 'YOUR TURN · THROW'
+                  : turnPlayer
+                    ? `${turnPlayer.name}'s turn`
+                    : 'Waiting…'
           }
-          yourTurn={!!isMyTurn && !dealing && !collectTo && !revealFaceUp}
+          yourTurn={canInteract}
+          autoActive={autoPlay}
+          onAuto={() => setAutoPlay((on) => !on)}
           onExit={() => {
             confirmQuitGame({
               message: 'Progress on this table will be lost.',

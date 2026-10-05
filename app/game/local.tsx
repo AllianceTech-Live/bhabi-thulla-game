@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTableChromeInsets } from '@/src/hooks/useTableChromeInsets';
 import { DealAnimation } from '@/src/components/game/DealAnimation';
 import { GameChrome } from '@/src/components/game/GameChrome';
 import { GameTable } from '@/src/components/game/GameTable';
@@ -20,11 +20,14 @@ import { cachedAssetSource } from '@/src/services/preloadAssets';
 import { GAME_THEME } from '@/src/constants/gameTheme';
 import { GAME_TIMING } from '@/src/constants/timing';
 import { TurnBanner } from '@/src/components/game/TurnBanner';
-import { getSeatOriginForPlayer } from '@/src/game/seatOrigin';
+import { pickAutoPlayCardId } from '@/src/game/pickAutoPlayCard';
+import { getThullaCollectTarget } from '@/src/game/seatOrigin';
+import type { CollectTarget } from '@/src/game/seatOrigin';
 import { useEscapeCelebration } from '@/src/hooks/useEscapeCelebration';
 import { useGameSfx } from '@/src/hooks/useGameSfx';
 import { useRoomLayout } from '@/src/hooks/useRoomLayout';
 import { useTableMusic } from '@/src/hooks/useTableMusic';
+import { useAutoPlayTurn } from '@/src/hooks/useAutoPlayTurn';
 import { useTurnTimer } from '@/src/hooks/useTurnTimer';
 import { playSfx, stopMusic } from '@/src/services/audio';
 import { showAlert } from '@/src/services/dialogs';
@@ -34,7 +37,7 @@ import { useGameStore } from '@/src/store/gameStore';
 import { useStatsStore } from '@/src/store/statsStore';
 
 export default function LocalGameScreen() {
-  const insets = useSafeAreaInsets();
+  const insets = useTableChromeInsets();
   const room = useRoomLayout();
   const state = useGameStore((s) => s.state);
   const playLocalCard = useGameStore((s) => s.playLocalCard);
@@ -53,8 +56,13 @@ export default function LocalGameScreen() {
 
   const [dealing, setDealing] = useState(true);
   const [playLocked, setPlayLocked] = useState(false);
+  const [autoPlay, setAutoPlay] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingPlayCardId, setPendingPlayCardId] = useState<string | null>(
+    null
+  );
   const [thullaCollectReady, setThullaCollectReady] = useState(false);
+  const [deckCollectReady, setDeckCollectReady] = useState(false);
   const recordedRef = useRef(false);
   const dealShownForGame = useRef<string | null>(null);
   const thullaFxShown = useRef<string | null>(null);
@@ -76,7 +84,14 @@ export default function LocalGameScreen() {
       setThullaCollectReady(false);
       return;
     }
+    const key = `${thullaMoment.thullaPlayerId}-${thullaMoment.thullaCard.id}-${thullaMoment.plays.length}-${thullaMoment.collectorId}`;
+    if (thullaFxShown.current !== key) {
+      thullaFxShown.current = key;
+      void playSfx('thulla');
+      void triggerHaptic('warning');
+    }
     setThullaCollectReady(false);
+    setDeckCollectReady(false);
     const t = setTimeout(
       () => setThullaCollectReady(true),
       GAME_TIMING.thullaSlamMs
@@ -85,17 +100,28 @@ export default function LocalGameScreen() {
   }, [thullaMoment]);
 
   useEffect(() => {
-    if (!thullaMoment) return;
-    const key = `${thullaMoment.thullaPlayerId}-${thullaMoment.thullaCard.id}-${thullaMoment.plays.length}`;
-    if (thullaFxShown.current === key) return;
-    thullaFxShown.current = key;
-    void triggerHaptic('medium');
-  }, [thullaMoment]);
-
-  useEffect(() => {
     if (!thullaMoment || !thullaCollectReady) return;
     void playSfx('shuffle');
   }, [thullaMoment, thullaCollectReady]);
+
+  // Non-Thulla completed trick → fly to bottom-right discard deck
+  useEffect(() => {
+    if (
+      !heldTrickPlays ||
+      heldTrickPlays.length === 0 ||
+      thullaMoment ||
+      (state?.trick.plays.length ?? 0) > 0
+    ) {
+      setDeckCollectReady(false);
+      return;
+    }
+    setDeckCollectReady(false);
+    const t = setTimeout(() => {
+      setDeckCollectReady(true);
+      void playSfx('shuffle');
+    }, GAME_TIMING.trickCollectDelayMs);
+    return () => clearTimeout(t);
+  }, [heldTrickPlays, thullaMoment, state?.trick.plays.length]);
 
   useEffect(() => {
     if (
@@ -128,23 +154,6 @@ export default function LocalGameScreen() {
     thullaMoment,
     heldTrickPlays,
   ]);
-
-  // Keep completed trick (up to 4 cards) visible in center briefly
-  useEffect(() => {
-    if (
-      !heldTrickPlays ||
-      heldTrickPlays.length === 0 ||
-      thullaMoment ||
-      (state?.trick.plays.length ?? 0) > 0
-    ) {
-      return;
-    }
-    const t = setTimeout(() => {
-      clearHeldTrick();
-      setPlayLocked(false);
-    }, GAME_TIMING.trickResolveMs);
-    return () => clearTimeout(t);
-  }, [heldTrickPlays, thullaMoment, state?.trick.plays.length, clearHeldTrick]);
 
   useEffect(() => {
     if (lastError) {
@@ -202,10 +211,14 @@ export default function LocalGameScreen() {
     return () => clearTimeout(t);
   }, [state?.phase, thullaMoment, clearThullaMoment]);
 
-  const onThullaDone = useCallback(() => {
+  const onCollectDone = useCallback(() => {
     clearThullaMoment();
+    clearHeldTrick();
+    setThullaCollectReady(false);
+    setDeckCollectReady(false);
+    setPendingPlayCardId(null);
     setPlayLocked(false);
-  }, [clearThullaMoment]);
+  }, [clearThullaMoment, clearHeldTrick]);
 
   const currentPlayer = useMemo(() => {
     if (!state?.currentTurnPlayerId) return null;
@@ -232,12 +245,19 @@ export default function LocalGameScreen() {
     state?.players[0] ??
     null;
 
+  useEffect(() => {
+    if (!pendingPlayCardId || !dockPlayer) return;
+    if (!dockPlayer.hand.some((c) => c.id === pendingPlayCardId)) {
+      setPendingPlayCardId(null);
+    }
+  }, [dockPlayer, pendingPlayCardId]);
+
   const handRevealed =
     alwaysShowHand ||
     !isPassPlay ||
     (isHumanTurn && state?.handRevealed === true);
 
-  const canInteract =
+  const myTurnReady =
     !gameOver &&
     !dealing &&
     !thullaMoment &&
@@ -250,10 +270,15 @@ export default function LocalGameScreen() {
       heldTrickPlays.length > 0 &&
       (state?.trick.plays.length ?? 0) === 0
     );
+  const canInteract = myTurnReady && !autoPlay;
 
   useEffect(() => {
     if (!canInteract) setSelectedId(null);
   }, [canInteract]);
+
+  useEffect(() => {
+    if (gameOver || dealing) setAutoPlay(false);
+  }, [gameOver, dealing]);
 
   const visibleCount =
     thullaMoment?.plays.length ??
@@ -271,10 +296,54 @@ export default function LocalGameScreen() {
       ? `${state.currentTurnPlayerId}:${state.trick.plays.length}:${state.events.length}`
       : null;
 
+  const onPlayCard = useCallback(
+    async (cardId: string) => {
+      if (!myTurnReady || !currentPlayer || playLocked) return;
+      if (currentPlayer.id === dockPlayerId) {
+        setPendingPlayCardId(cardId);
+      }
+      setSelectedId(null);
+      setPlayLocked(true);
+      const ok = playLocalCard(currentPlayer.id, cardId);
+      if (!ok) {
+        setPendingPlayCardId(null);
+        setPlayLocked(false);
+        return;
+      }
+      const store = useGameStore.getState();
+      if (store.thullaMoment != null) {
+        await triggerHaptic('light');
+        return;
+      }
+      await triggerHaptic('light');
+      if (
+        store.heldTrickPlays &&
+        store.heldTrickPlays.length > 0 &&
+        store.state?.trick.plays.length === 0
+      ) {
+        return;
+      }
+      setTimeout(() => setPlayLocked(false), GAME_TIMING.afterPlayMs);
+    },
+    [myTurnReady, currentPlayer, playLocked, dockPlayerId, playLocalCard]
+  );
+
   const { secondsLeft, progress: turnProgress } = useTurnTimer({
     turnKey,
     durationMs: GAME_TIMING.turnTimeoutMs,
-    enableTimeout: false,
+    enableTimeout: myTurnReady && !autoPlay,
+    onTimeout: () => setAutoPlay(true),
+  });
+
+  useAutoPlayTurn({
+    autoPlay,
+    myTurnReady,
+    turnKey,
+    playOnce: () => {
+      if (!state || !currentPlayer) return;
+      const cardId = pickAutoPlayCardId(state, currentPlayer.id);
+      if (cardId) void onPlayCard(cardId);
+    },
   });
 
   if (!state || !dockPlayer) {
@@ -293,38 +362,15 @@ export default function LocalGameScreen() {
       ? 'Dealing…'
       : thullaMoment
         ? 'Thulla!'
-        : isHumanTurn && currentPlayer?.id === dockPlayerId
-          ? 'YOUR TURN'
-          : currentPlayer
-            ? `${currentPlayer.name}'s turn`
-            : 'Waiting…';
+        : autoPlay
+          ? 'AUTO PLAY ON'
+          : isHumanTurn && currentPlayer?.id === dockPlayerId
+            ? 'YOUR TURN'
+            : currentPlayer
+              ? `${currentPlayer.name}'s turn`
+              : 'Waiting…';
 
   const yourTurn = canInteract;
-
-  const onPlayCard = async (cardId: string) => {
-    if (!canInteract || !currentPlayer || playLocked) return;
-    setPlayLocked(true);
-    const ok = playLocalCard(currentPlayer.id, cardId);
-    if (ok) {
-      const store = useGameStore.getState();
-      if (store.thullaMoment != null) {
-        await triggerHaptic('light');
-        return;
-      }
-      await triggerHaptic('light');
-      // If trick completed, unlock happens when held cards clear
-      if (
-        store.heldTrickPlays &&
-        store.heldTrickPlays.length > 0 &&
-        store.state?.trick.plays.length === 0
-      ) {
-        return;
-      }
-      setTimeout(() => setPlayLocked(false), GAME_TIMING.afterPlayMs);
-    } else {
-      setPlayLocked(false);
-    }
-  };
 
   return (
     <GameBackground>
@@ -349,17 +395,20 @@ export default function LocalGameScreen() {
             }
             collectTo={
               thullaMoment && thullaCollectReady
-                ? getSeatOriginForPlayer(
+                ? getThullaCollectTarget(
                     state,
                     dockPlayerId,
                     thullaMoment.collectorId
                   )
-                : null
+                : deckCollectReady
+                  ? 'deck'
+                  : null
             }
-            onCollectDone={onThullaDone}
+            onCollectDone={onCollectDone}
             turnSeconds={secondsLeft}
             turnProgress={turnProgress}
             turnDurationSec={Math.round(GAME_TIMING.turnTimeoutMs / 1000)}
+            handThrowCardId={pendingPlayCardId}
           />
           {dealing ? (
             <DealAnimation
@@ -416,10 +465,14 @@ export default function LocalGameScreen() {
           ) : (
             <View style={styles.handColumn}>
               <PlayerHand
-                hand={dockPlayer.hand}
+                hand={
+                  pendingPlayCardId
+                    ? dockPlayer.hand.filter((c) => c.id !== pendingPlayCardId)
+                    : dockPlayer.hand
+                }
                 leadSuit={state.trick.leadSuit}
                 selectedId={selectedId}
-                interactive={canInteract}
+                interactive={canInteract && !pendingPlayCardId}
                 hidden={!handRevealed && isPassPlay}
                 compact={room.compactHand}
                 liftOnPress
@@ -460,6 +513,8 @@ export default function LocalGameScreen() {
           offline={state.mode !== 'online'}
           statusLine={statusLine}
           yourTurn={yourTurn}
+          autoActive={autoPlay}
+          onAuto={() => setAutoPlay((on) => !on)}
           onExit={() =>
             confirmQuitGame({
               message: 'Progress on this table will be lost.',

@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAppChromeInsets } from '../../hooks/useAppChromeInsets';
 import { COLORS } from '../../constants/theme';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { playSfx } from '../../services/audio';
@@ -24,7 +24,7 @@ export function BackHeader({
   visible = true,
   embedded = false,
 }: BackHeaderProps) {
-  const insets = useSafeAreaInsets();
+  const insets = useAppChromeInsets();
   const layout = useResponsiveLayout();
 
   if (!visible) return null;

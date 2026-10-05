@@ -1,4 +1,4 @@
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import { COLORS } from '@/src/constants/theme';
 import { playSfx } from '@/src/services/audio';
@@ -13,7 +13,9 @@ function toneAccent(tone: 'info' | 'error' | 'success') {
 }
 
 /**
- * In-app modal — replaces native window.alert / Alert on web & native.
+ * In-app confirm/alert overlay.
+ * Uses a root-level View (not RN Modal) so Quit → navigate never finishes
+ * the Android Activity when a Modal was tearing down.
  */
 export function AppDialog() {
   const visible = useDialogStore((s) => s.visible);
@@ -25,22 +27,19 @@ export function AppDialog() {
 
   const accent = toneAccent(tone);
 
-  const onPressButton = async (btn: DialogButton) => {
-    await playSfx('click');
-    await triggerHaptic(btn.style === 'destructive' ? 'warning' : 'light');
+  if (!visible) return null;
+
+  const onPressButton = (btn: DialogButton) => {
+    void playSfx('click');
+    void triggerHaptic(btn.style === 'destructive' ? 'warning' : 'light');
+    const action = btn.onPress;
     close();
-    // Defer so the modal unmounts before navigation / state updates.
-    requestAnimationFrame(() => btn.onPress?.());
+    // Defer so Zustand close paints before navigation / state updates.
+    setTimeout(() => action?.(), Platform.OS === 'android' ? 50 : 0);
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={close}
-    >
+    <View style={styles.root} pointerEvents="box-none">
       <Pressable style={styles.backdrop} onPress={close}>
         <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
           <View style={[styles.accentBar, { backgroundColor: accent }]} />
@@ -65,18 +64,23 @@ export function AppDialog() {
                   variant={variant}
                   compact
                   flex={buttons.length > 1}
-                  onPress={() => void onPressButton(btn)}
+                  onPress={() => onPressButton(btn)}
                 />
               );
             })}
           </View>
         </Pressable>
       </Pressable>
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 100000,
+    elevation: 100000,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(4, 10, 8, 0.72)',

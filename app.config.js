@@ -62,6 +62,14 @@ module.exports = {
         },
       ],
       [
+        'expo-navigation-bar',
+        {
+          backgroundColor: '#062820',
+          barStyle: 'light',
+          enforceContrast: false,
+        },
+      ],
+      [
         'expo-splash-screen',
         {
           image: './assets/images/splash-icon.png',

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useMemo } from 'react';
 import { useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTableChromeInsets } from './useTableChromeInsets';
 import { GAME_THEME } from '../constants/gameTheme';
 import { clamp, landscapeAxes } from '../constants/designScale';
 
@@ -32,7 +32,7 @@ export function useTableScale(): TableScale {
 /** Window-based metrics when table hasn't laid out yet / for background */
 export function useWindowTableMetrics(): TableScale {
   const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
+  const insets = useTableChromeInsets();
   return useMemo(() => {
     const { long, short } = landscapeAxes(width, height);
     const availW = Math.max(0, long - insets.left - insets.right);

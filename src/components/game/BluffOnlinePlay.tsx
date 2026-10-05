@@ -7,8 +7,8 @@ import {
 } from 'react-native';
 import { showAlert } from '@/src/services/dialogs';
 import { confirmQuitGame } from '@/src/services/quitGame';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { useTableChromeInsets } from '@/src/hooks/useTableChromeInsets';
+import { router, type Href } from 'expo-router';
 import { GameChrome } from '@/src/components/game/GameChrome';
 import { GameOverScreen } from '@/src/components/game/GameOverScreen';
 import { GameTable } from '@/src/components/game/GameTable';
@@ -20,9 +20,10 @@ import { AppButton } from '@/src/components/ui/AppButton';
 import { ART_DECO_PALETTE } from '@/src/constants/gameAssets';
 import { GAME_THEME } from '@/src/constants/gameTheme';
 import { GAME_TIMING } from '@/src/constants/timing';
-import { type BluffState } from '@/src/game/bluff';
+import { decideBluffMove, type BluffState } from '@/src/game/bluff';
 import type { Card, GameState, Rank, TrickPlay } from '@/src/game/types';
 import { RANKS } from '@/src/game/types';
+import { useAutoPlayTurn } from '@/src/hooks/useAutoPlayTurn';
 import { useRoomLayout } from '@/src/hooks/useRoomLayout';
 import { useTableMusic } from '@/src/hooks/useTableMusic';
 import { useTurnTimer } from '@/src/hooks/useTurnTimer';
@@ -107,8 +108,8 @@ type Props = {
   roomCode: string;
   initialState: BluffState;
   onState: (state: BluffState) => void;
-  /** Where HOME sends everyone after the win popup (online menu / quick match). */
-  homeHref?: '/online' | '/online/match';
+  /** Where HOME / Quit sends players after leaving or round end. */
+  homeHref?: Href;
 };
 
 /**
@@ -120,9 +121,9 @@ export function BluffOnlinePlay({
   roomCode,
   initialState,
   onState,
-  homeHref = '/online',
+  homeHref = '/',
 }: Props) {
-  const insets = useSafeAreaInsets();
+  const insets = useTableChromeInsets();
   const room = useRoomLayout();
   const [state, setState] = useState<BluffState>(initialState);
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
@@ -134,6 +135,7 @@ export function BluffOnlinePlay({
   const [revealFaceUp, setRevealFaceUp] = useState(false);
   const [dealing, setDealing] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [autoPlay, setAutoPlay] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const eventsLen = useRef(initialState.events.length);
   const dealShown = useRef(false);
@@ -287,7 +289,7 @@ export function BluffOnlinePlay({
   const canThrow = throwCount >= 1 && throwCount <= 4;
   const cardsPerPlayer = Math.ceil(52 / state.players.length);
 
-  const canInteract =
+  const myTurnReady =
     !dealing &&
     isMyTurn &&
     Boolean(me && me.finishOrder == null) &&
@@ -295,6 +297,7 @@ export function BluffOnlinePlay({
     !revealFaceUp &&
     !submitting &&
     state.phase === 'playing';
+  const canInteract = myTurnReady && !autoPlay;
 
   const turnKey =
     !dealing &&
@@ -308,16 +311,33 @@ export function BluffOnlinePlay({
   const { secondsLeft, progress: turnProgress } = useTurnTimer({
     turnKey,
     durationMs: GAME_TIMING.turnTimeoutMs,
-    enableTimeout: false,
+    enableTimeout: myTurnReady && !autoPlay,
+    onTimeout: () => setAutoPlay(true),
   });
 
+  useEffect(() => {
+    if (state.phase === 'game_complete' || dealing) setAutoPlay(false);
+  }, [state.phase, dealing]);
+
   const toggleCard = (cardId: string) => {
+    if (!canInteract) return;
     setSelectedCardIds((prev) => {
       if (prev.includes(cardId)) return prev.filter((id) => id !== cardId);
       if (prev.length >= 4) return prev;
       return [...prev, cardId];
     });
   };
+
+  const refreshAfterRace = useCallback(async () => {
+    try {
+      const snap = await fetchOnlineSnapshot(gameId);
+      if (snap?.gameType === 'bluff' && snap.state) {
+        applyState(snap.state as BluffState);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [gameId, applyState]);
 
   const doThrow = async (rank: Rank) => {
     if (submitting || !canThrow) return;
@@ -333,20 +353,12 @@ export function BluffOnlinePlay({
       setClaimSheetOpen(false);
       setSheetRank(null);
       applyState(next);
-      void playSfx('card_throw');
       void triggerHaptic('light');
     } catch (e) {
       void playSfx('error');
       const msg = errorMessage(e);
       if (isOnlineRaceError(msg)) {
-        try {
-          const snap = await fetchOnlineSnapshot(gameId);
-          if (snap?.gameType === 'bluff' && snap.state) {
-            applyState(snap.state as BluffState);
-          }
-        } catch {
-          /* ignore */
-        }
+        await refreshAfterRace();
       } else {
         setLastError(msg);
       }
@@ -354,6 +366,44 @@ export function BluffOnlinePlay({
       setSubmitting(false);
     }
   };
+
+  useAutoPlayTurn({
+    autoPlay,
+    myTurnReady,
+    turnKey,
+    playOnce: () => {
+      if (submitting) return;
+      const decision = decideBluffMove(state, userId);
+      if (!decision) return;
+      setSubmitting(true);
+      setLastError(null);
+      setClaimSheetOpen(false);
+      void (async () => {
+        try {
+          const next =
+            decision.action === 'call'
+              ? await submitBluffMove(gameId, { action: 'call' })
+              : await submitBluffMove(gameId, {
+                  action: 'play',
+                  cardIds: decision.cardIds,
+                  claimedRank: decision.claimedRank,
+                });
+          setSelectedCardIds([]);
+          applyState(next);
+          void triggerHaptic('light');
+        } catch (e) {
+          const msg = errorMessage(e);
+          if (isOnlineRaceError(msg)) {
+            await refreshAfterRace();
+          } else {
+            setLastError(msg);
+          }
+        } finally {
+          setSubmitting(false);
+        }
+      })();
+    },
+  });
 
   const onPressThrow = () => {
     if (!canThrow) {
@@ -503,7 +553,7 @@ export function BluffOnlinePlay({
             leadSuit={null}
             selectedId={selectedCardIds[selectedCardIds.length - 1] ?? null}
             selectedIds={selectedCardIds}
-            interactive={!!isMyTurn && !collectTo && !revealFaceUp && !submitting}
+            interactive={canInteract}
             compact={room.compactHand}
             onSelect={(c) => {
               toggleCard(c.id);
@@ -513,12 +563,7 @@ export function BluffOnlinePlay({
         </View>
       ) : null}
 
-      {!dealing &&
-      isMyTurn &&
-      me &&
-      me.finishOrder == null &&
-      !collectTo &&
-      !revealFaceUp ? (
+      {canInteract ? (
         <View
           style={[
             styles.actionBar,
@@ -726,19 +771,23 @@ export function BluffOnlinePlay({
             ? 'DEALING…'
             : collectTo || revealFaceUp
               ? 'COLLECTING…'
-              : claimSheetOpen
-                ? 'CLAIM RANK…'
-                : isMyTurn
-                  ? canCall
-                    ? 'YOUR TURN · CALL / PASS / THROW'
-                    : canPass
-                      ? 'YOUR TURN · PASS OR THROW'
-                      : 'YOUR TURN · THROW'
-                  : turnPlayer
-                    ? `${turnPlayer.name}'s turn`
-                    : 'Waiting…'
+              : autoPlay
+                ? 'AUTO PLAY ON'
+                : claimSheetOpen
+                  ? 'CLAIM RANK…'
+                  : isMyTurn
+                    ? canCall
+                      ? 'YOUR TURN · CALL / PASS / THROW'
+                      : canPass
+                        ? 'YOUR TURN · PASS OR THROW'
+                        : 'YOUR TURN · THROW'
+                    : turnPlayer
+                      ? `${turnPlayer.name}'s turn`
+                      : 'Waiting…'
         }
-        yourTurn={!!isMyTurn && !dealing && !collectTo && !revealFaceUp}
+        yourTurn={canInteract}
+        autoActive={autoPlay}
+        onAuto={() => setAutoPlay((on) => !on)}
         onExit={() => {
           confirmQuitGame({
             message:

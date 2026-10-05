@@ -3,7 +3,8 @@ import { Stack, router, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, BackHandler, StyleSheet } from 'react-native';
+import { AppState, BackHandler, Platform, StyleSheet, View } from 'react-native';
+import { NavigationBar } from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -14,6 +15,7 @@ import { NameGateModal } from '@/src/components/ui/NameGateModal';
 import { COLORS } from '@/src/constants/theme';
 import { initAudio, resetAudio } from '@/src/services/audio';
 import { initAds } from '@/src/services/ads';
+import { isAndroidImmersivePath } from '@/src/services/immersiveChrome';
 import { loadPlayerName } from '@/src/services/online';
 import { lockLandscapeOrientation } from '@/src/services/orientation';
 import { preloadGameAssets } from '@/src/services/preloadAssets';
@@ -103,6 +105,24 @@ export default function RootLayout() {
     return () => clearTimeout(t);
   }, [pathname]);
 
+  const gameImmersive =
+    Platform.OS === 'android' && isAndroidImmersivePath(pathname);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const apply = () => {
+      NavigationBar.setHidden(gameImmersive);
+      if (gameImmersive) {
+        NavigationBar.setStyle('light');
+      }
+    };
+    apply();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') apply();
+    });
+    return () => sub.remove();
+  }, [gameImmersive]);
+
   // Safety net: never let Android finish the Activity off the home screen.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -135,28 +155,33 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <ThemeProvider value={navTheme}>
-        <StatusBar style="light" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            animation: 'fade',
-            orientation: 'landscape',
-          }}
-        >
-          {LANDSCAPE_SCREENS.map((name) => (
-            <Stack.Screen
-              key={name}
-              name={name}
-              options={{ orientation: 'landscape' }}
-            />
-          ))}
-        </Stack>
-        {ready && showSplash ? (
-          <AnimatedSplash onDone={onSplashDone} />
-        ) : null}
-        <AppDialog />
-        <NameGateModal />
-        <LandscapeGate />
+        <View style={styles.root}>
+          <StatusBar style="light" hidden={gameImmersive} />
+          {Platform.OS === 'android' ? (
+            <NavigationBar hidden={gameImmersive} style="light" />
+          ) : null}
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              animation: 'fade',
+              orientation: 'landscape',
+            }}
+          >
+            {LANDSCAPE_SCREENS.map((name) => (
+              <Stack.Screen
+                key={name}
+                name={name}
+                options={{ orientation: 'landscape' }}
+              />
+            ))}
+          </Stack>
+          {ready && showSplash ? (
+            <AnimatedSplash onDone={onSplashDone} />
+          ) : null}
+          <AppDialog />
+          <NameGateModal />
+          <LandscapeGate />
+        </View>
       </ThemeProvider>
     </GestureHandlerRootView>
   );

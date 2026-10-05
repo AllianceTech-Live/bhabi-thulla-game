@@ -13,7 +13,9 @@ const PASS_TURN_SUPPRESS_MS = 900;
 export function useGameSfx(
   state: GameState | null | undefined,
   visibleCount: number,
-  paused = false
+  paused = false,
+  /** Ignore card_played SFX for this seat (online: already saw optimistic throw). */
+  localPlayerId?: string | null
 ) {
   const eventsSeen = useRef<number | null>(null);
   const turnSeen = useRef<string | null | undefined>(undefined);
@@ -54,6 +56,10 @@ export function useGameSfx(
       if (event.type === 'card_played') {
         threwCard = true;
         suppressPassUntil.current = Date.now() + PASS_TURN_SUPPRESS_MS;
+        const playerId = String(event.payload?.playerId ?? '');
+        if (localPlayerId && playerId === localPlayerId) {
+          continue;
+        }
         void playSfx('card_throw');
         // Thulla cards slap the table in their own slam animation.
         if (fresh[i + 1]?.type === 'thulla') continue;
@@ -89,5 +95,5 @@ export function useGameSfx(
       void playSfx('untap');
     }
     visibleSeen.current = visibleCount;
-  }, [state, visibleCount, paused]);
+  }, [state, visibleCount, paused, localPlayerId]);
 }
