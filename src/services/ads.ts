@@ -2,7 +2,7 @@ import { Platform, TurboModuleRegistry } from 'react-native';
 import type { InterstitialAd as InterstitialAdType } from 'react-native-google-mobile-ads';
 
 /**
- * AdMob placement hooks — Android only for now.
+ * AdMob placement hooks — Android + iOS (native builds only, not Expo Go).
  * Never interrupt an active turn.
  */
 
@@ -12,29 +12,53 @@ export type AdPlacement =
   | 'results_rewarded';
 
 /** Production AdMob Android units (Bhabi Thulla Card Game). */
-const PROD = {
+const PROD_ANDROID = {
   banner: 'ca-app-pub-3712201782893807/3655837185',
   interstitial: 'ca-app-pub-3712201782893807/9047764668',
 } as const;
 
-function envUnit(key: string, fallback: string): string {
-  const v = process.env[key];
-  return typeof v === 'string' && v.startsWith('ca-app-pub-') ? v : fallback;
+/** Production AdMob iOS units (Bhabi Thulla Card Game). */
+const PROD_IOS = {
+  banner: 'ca-app-pub-3712201782893807/3685704881',
+  interstitial: 'ca-app-pub-3712201782893807/5928724845',
+} as const;
+
+function pickUnit(value: string | undefined, fallback: string): string {
+  return typeof value === 'string' && value.startsWith('ca-app-pub-')
+    ? value
+    : fallback;
 }
 
-export const AD_UNITS = {
-  banner: envUnit('EXPO_PUBLIC_ADMOB_ANDROID_BANNER_UNIT_ID', PROD.banner),
-  interstitial: envUnit(
-    'EXPO_PUBLIC_ADMOB_ANDROID_INTERSTITIAL_UNIT_ID',
-    PROD.interstitial
+const ANDROID_UNITS = {
+  banner: pickUnit(
+    process.env.EXPO_PUBLIC_ADMOB_ANDROID_BANNER_UNIT_ID,
+    PROD_ANDROID.banner
+  ),
+  interstitial: pickUnit(
+    process.env.EXPO_PUBLIC_ADMOB_ANDROID_INTERSTITIAL_UNIT_ID,
+    PROD_ANDROID.interstitial
   ),
 } as const;
 
+const IOS_UNITS = {
+  banner: pickUnit(
+    process.env.EXPO_PUBLIC_ADMOB_IOS_BANNER_UNIT_ID,
+    PROD_IOS.banner
+  ),
+  interstitial: pickUnit(
+    process.env.EXPO_PUBLIC_ADMOB_IOS_INTERSTITIAL_UNIT_ID,
+    PROD_IOS.interstitial
+  ),
+} as const;
+
+export const AD_UNITS =
+  Platform.OS === 'ios' ? IOS_UNITS : ANDROID_UNITS;
+
 let nativeAdsCached: boolean | null = null;
 
-/** True only on Android builds that include react-native-google-mobile-ads (not Expo Go). */
+/** True on Android/iOS builds that include the AdMob native module (not Expo Go). */
 export function adsSupported(): boolean {
-  if (Platform.OS !== 'android') return false;
+  if (Platform.OS !== 'android' && Platform.OS !== 'ios') return false;
   if (nativeAdsCached !== null) return nativeAdsCached;
   try {
     nativeAdsCached =
@@ -59,7 +83,7 @@ let initPromise: Promise<boolean> | null = null;
 let interstitial: InterstitialAdType | null = null;
 let interstitialLoaded = false;
 
-/** Initialize GMA SDK once (Android). Safe no-op elsewhere. */
+/** Initialize GMA SDK once. Safe no-op when native ads are unavailable. */
 export function initAds(): Promise<boolean> {
   if (!adsSupported()) return Promise.resolve(false);
   if (!initPromise) {
@@ -70,6 +94,8 @@ export function initAds(): Promise<boolean> {
         );
         await mobileAds().setRequestConfiguration({
           maxAdContentRating: MaxAdContentRating.PG,
+          tagForChildDirectedTreatment: false,
+          tagForUnderAgeOfConsent: false,
         });
         await mobileAds().initialize();
         await preloadInterstitial();
@@ -88,7 +114,9 @@ async function preloadInterstitial(): Promise<void> {
     const { InterstitialAd, AdEventType } = await import(
       'react-native-google-mobile-ads'
     );
-    const ad = InterstitialAd.createForAdRequest(AD_UNITS.interstitial);
+    const ad = InterstitialAd.createForAdRequest(AD_UNITS.interstitial, {
+      requestNonPersonalizedAdsOnly: true,
+    });
     interstitial = ad;
     interstitialLoaded = false;
     ad.addAdEventListener(AdEventType.LOADED, () => {

@@ -2,12 +2,14 @@
  * Expo config — dynamic so AdMob App IDs can come from EAS env.
  * @type {import('expo/config').ExpoConfig}
  */
-/** Required by the plugin for iOS builds; ads stay disabled on iOS in JS. */
-const googleTestIosAppId = 'ca-app-pub-3940256099942544~1458002511';
 /** Real AdMob Android App ID (Bhabi Thulla Card Game). */
 const androidAppId =
   process.env.ADMOB_ANDROID_APP_ID ||
   'ca-app-pub-3712201782893807~2590167527';
+/** Real AdMob iOS App ID (Bhabi Thulla Card Game). */
+const iosAppId =
+  process.env.ADMOB_IOS_APP_ID ||
+  'ca-app-pub-3712201782893807~1348236026';
 
 module.exports = {
   expo: {
@@ -88,9 +90,11 @@ module.exports = {
       [
         'react-native-google-mobile-ads',
         {
-          // Real Android App ID; override with ADMOB_ANDROID_APP_ID if needed.
+          // Real Android App ID; set ADMOB_IOS_APP_ID for production iOS.
           androidAppId,
-          iosAppId: process.env.ADMOB_IOS_APP_ID || googleTestIosAppId,
+          iosAppId,
+          userTrackingUsageDescription:
+            'This identifier may be used to show you relevant ads. You can still play without personalized ads.',
         },
       ],
     ],

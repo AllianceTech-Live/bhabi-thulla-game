@@ -7,7 +7,7 @@ type AdBannerProps = {
 };
 
 /**
- * Android-only AdMob banner. Renders nothing on iOS / web.
+ * Native AdMob banner (Android + iOS). Renders nothing on web / Expo Go.
  */
 export function AdBanner({ isActiveTurn = false }: AdBannerProps) {
   const [ready, setReady] = useState(false);

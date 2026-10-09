@@ -73,4 +73,4 @@ Configure `extra.eas.projectId` in `app.json` first.
 
 ## Ads
 
-Android only (AdMob via `react-native-google-mobile-ads`). Banner on home; interstitial after results / game over. Never during an active turn. Set `ADMOB_ANDROID_APP_ID` + unit IDs in EAS env for production; defaults use Google sample IDs. Requires a new native Android build (not Expo Go).
+Android + iOS (AdMob via `react-native-google-mobile-ads`). Banner on home; interstitial after results / game over. Never during an active turn. Set `ADMOB_*_APP_ID` + `EXPO_PUBLIC_ADMOB_*_UNIT_ID` in EAS env for production. Android has production defaults in code; iOS falls back to Google sample IDs until you set `ADMOB_IOS_APP_ID` and the iOS unit env vars. Requires a native build (not Expo Go).
