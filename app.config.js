@@ -15,7 +15,7 @@ module.exports = {
   expo: {
     name: 'Bhabi Thulla',
     slug: 'bhabi-thulla',
-    version: '1.0.0',
+    version: '1.0.1',
     orientation: 'landscape',
     icon: './assets/images/icon.png',
     scheme: 'bhabithulla',
